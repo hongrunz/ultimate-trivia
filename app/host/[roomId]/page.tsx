@@ -1,7 +1,7 @@
 'use client';
 
 import { useParams } from 'next/navigation';
-import StartGame from '../../components/StartGame';
+import StartGame from '../../../frontend/components/StartGame';
 
 export default function HostStartPage() {
   const params = useParams();

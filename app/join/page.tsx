@@ -1,5 +1,5 @@
 import { Suspense } from 'react';
-import JoinGame from '../components/JoinGame';
+import JoinGame from '../../frontend/components/JoinGame';
 
 export default function JoinPage() {
   return (

@@ -1,4 +1,4 @@
-import CreateGame from './components/CreateGame';
+import CreateGame from '../frontend/components/CreateGame';
 
 export default function Home() {
   return <CreateGame />;
