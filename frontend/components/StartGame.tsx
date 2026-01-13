@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { QRCodeSVG } from 'qrcode.react';
 import {
   PageContainer,
@@ -25,6 +26,7 @@ interface StartGameProps {
 }
 
 export default function StartGame({ roomId }: StartGameProps) {
+  const router = useRouter();
   const [room, setRoom] = useState<RoomResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isStarting, setIsStarting] = useState(false);
@@ -83,12 +85,13 @@ export default function StartGame({ roomId }: StartGameProps) {
     setError('');
 
     try {
-      await api.startGame(roomId, hostToken);
-      // Refresh room data to get questions
-      const updatedRoom = await api.getRoom(roomId);
-      setRoom(updatedRoom);
-      alert('Game started successfully!');
-      // TODO: Navigate to game view when implemented
+      const response = await api.startGame(roomId, hostToken);
+      // Store the host's player token if provided
+      if (response.playerToken) {
+        tokenStorage.setPlayerToken(roomId, response.playerToken);
+      }
+      // Navigate to the game page
+      router.push(`/game/${roomId}`);
     } catch (err) {
       console.error('Error starting game:', err);
       setError(err instanceof Error ? err.message : 'Failed to start game. Please try again.');

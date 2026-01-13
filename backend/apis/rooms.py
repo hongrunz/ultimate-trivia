@@ -69,6 +69,7 @@ class StartGameResponse(BaseModel):
     success: bool
     message: str
     questionsCount: int
+    playerToken: Optional[str] = None
 
 
 def generate_token() -> str:
@@ -94,6 +95,8 @@ async def create_room(request: CreateRoomRequest):
         )
         
         room = RoomStore.create_room(room_data)
+        
+        PlayerStore.create_player(room.room_id, request.name)
         
         return CreateRoomResponse(
             roomId=str(room.room_id),
@@ -235,10 +238,18 @@ async def start_game(room_id: str, hostToken: Optional[str] = Header(None, alias
         # Update room status
         RoomStore.update_room_status(room_uuid, "started", datetime.now())
         
+        # Find the host's player record to get their player token
+        host_player = None
+        for player in players:
+            if player.player_name == room.host_name:
+                host_player = player
+                break
+        
         return StartGameResponse(
             success=True,
             message="Game started successfully",
-            questionsCount=len(sample_questions)
+            questionsCount=len(sample_questions),
+            playerToken=host_player.player_token if host_player else None
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail="Invalid room ID")

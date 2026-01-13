@@ -57,6 +57,7 @@ export interface StartGameResponse {
   success: boolean;
   message: string;
   questionsCount: number;
+  playerToken?: string;
 }
 
 async function fetchAPI<T>(
