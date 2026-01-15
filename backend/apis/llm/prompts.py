@@ -47,11 +47,17 @@ Return ONLY a valid JSON array of objects. Each object MUST have:
         )
     ]
 
+    # Configure generation with higher temperature for more creative/varied questions
+    config = types.GenerateContentConfig(
+        temperature=1.5,  # Increased from default 1.0 for more variety
+    )
+
     # Non-streaming: easier to parse reliably
     try:
         resp = client.models.generate_content(
             model=MODEL_NAME,
             contents=contents,
+            config=config,
         )
     except Exception as e:
         raise RuntimeError(f"Error calling Gemini API: {e}") from e
