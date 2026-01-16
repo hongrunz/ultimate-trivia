@@ -11,7 +11,7 @@ ultimate-trivia/
 │   └── lib/          # Frontend utilities (API client)
 ├── app/              # Next.js routes (App Router)
 ├── backend/          # Python FastAPI backend
-│   ├── db/          # Database models, store, and client
+│   ├── redis/          # Database models, store, and client
 │   └── apis/        # API endpoints and business logic
 ```
 
@@ -19,7 +19,7 @@ ultimate-trivia/
 
 - **Node.js** 18+ and npm/yarn/pnpm
 - **Python** 3.14+
-- **Supabase account** (for database)
+- **Redis** (for database - can use local Redis or cloud service like Redis Cloud, Upstash)
 
 ## Getting Started
 
@@ -63,31 +63,55 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-#### c. Configure Supabase
+#### c. Install and Configure Redis
 
-1. Create a [Supabase account](https://supabase.com) and project
-2. Get your credentials from **Settings → API**:
-   - Project URL
-   - `anon` public key
-3. Create a `.env` file in the `backend` directory:
+**Option 1: Local Redis (Recommended for Development)**
+
+Install Redis on your system:
+
+- **macOS**: `brew install redis` then `brew services start redis`
+- **Linux**: `sudo apt-get install redis-server` (Ubuntu/Debian) or `sudo yum install redis` (CentOS/RHEL)
+- **Windows**: Download from [Redis for Windows](https://github.com/microsoftarchive/redis/releases) or use WSL
+
+Start Redis:
+```bash
+redis-server
+```
+
+**Option 2: Redis Cloud (For Production)**
+
+1. Sign up for [Redis Cloud](https://redis.com/try-free/) or [Upstash](https://upstash.com/)
+2. Create a database and get your connection URL
+
+#### d. Configure Environment Variables
+
+Create a `.env` file in the `backend` directory:
 
 ```bash
 cd backend
 touch .env
 ```
 
-Add your credentials to `.env`:
-
+**For Local Redis:**
 ```
-SUPABASE_URL=https://your-project-id.supabase.co
-SUPABASE_ANON_KEY=your-anon-key-here
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_DB=0
+# REDIS_PASSWORD=  # Leave empty for local Redis without password
 ```
 
-#### d. Set Up Database
+**For Redis Cloud/Upstash:**
+```
+REDIS_URL=redis://default:your-password@your-redis-host:6379
+# Or for Redis Cloud:
+# REDIS_URL=rediss://default:your-password@your-redis-host:6379
+```
 
-1. In Supabase dashboard, go to **SQL Editor**
-2. Create a new query and paste the contents of `backend/db/schema.sql`
-3. Run the query to create the required tables
+**Additional Required Variables:**
+```
+GEMINI_MODEL_NAME=gemini-2.0-flash
+GEMINI_API_KEY=your-gemini-api-key
+```
 
 #### e. Run the Backend Server
 
@@ -134,11 +158,10 @@ Once the backend is running, you can access:
 
 ## Additional Documentation
 
-- **Backend Setup Details**: See `backend/SETUP.md` for detailed Supabase setup instructions
 - **Backend API Docs**: See `backend/README.md` for API endpoint documentation
 
 ## Learn More
 
 - [Next.js Documentation](https://nextjs.org/docs)
 - [FastAPI Documentation](https://fastapi.tiangolo.com)
-- [Supabase Documentation](https://supabase.com/docs)
+- [Redis Documentation](https://redis.io/docs)

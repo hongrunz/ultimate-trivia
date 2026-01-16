@@ -8,7 +8,7 @@ from typing import Optional
 from uuid import UUID
 
 from apis.rooms import router as rooms_router
-from db.store import RoomStore, PlayerStore
+from storage.client import get_redis_client
 
 app = FastAPI(
     title="Ultimate Trivia API",

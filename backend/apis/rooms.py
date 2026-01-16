@@ -8,8 +8,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 
-from db.store import RoomStore, PlayerStore, QuestionStore
-from db.models import Room, Player, Question
+from storage.store import RoomStore, PlayerStore, QuestionStore
 from apis.llm.prompts import generate_questions_with_llm
 
 router = APIRouter(prefix="/api/rooms", tags=["rooms"])
@@ -85,7 +84,7 @@ async def create_room(request: CreateRoomRequest):
     try:
         host_token = generate_token()
         
-        from db.models import RoomCreate
+        from storage.models import RoomCreate
         room_data = RoomCreate(
             name=request.name,
             host_name=request.name,  # Using name as host_name
@@ -222,7 +221,7 @@ async def start_game(room_id: str, hostToken: Optional[str] = Header(None, alias
         sample_questions = generate_questions_with_llm(room.topics, room.questions_per_round)
         
         # Create questions in database
-        from db.models import QuestionCreate
+        from storage.models import QuestionCreate
         questions_to_create = [
             QuestionCreate(
                 room_id=room_uuid,
@@ -356,16 +355,16 @@ async def get_leaderboard(room_id: str):
         if not room:
             raise HTTPException(status_code=404, detail="Room not found")
         
-        # Get all players in the room
-        players = PlayerStore.get_players_by_room(room_uuid)
+        # Get players sorted by score (already sorted by Redis sorted set)
+        players = PlayerStore.get_leaderboard(room_uuid)
         
-        # Sort by score (descending) and create leaderboard entries
+        # Create leaderboard entries
         leaderboard_entries = [
             LeaderboardEntry(
                 playerId=str(p.player_id),
                 score=p.score if hasattr(p, 'score') else 0
             )
-            for p in sorted(players, key=lambda x: (x.score if hasattr(x, 'score') else 0), reverse=True)
+            for p in players
         ]
         
         return LeaderboardResponse(leaderboard=leaderboard_entries)

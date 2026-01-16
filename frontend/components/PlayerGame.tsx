@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import QuestionScreen from './QuestionScreen';
 import SubmittedScreen from './SubmittedScreen';
 import GameFinished from './GameFinished';
@@ -28,6 +28,8 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [hasSubmittedCurrentQuestion, setHasSubmittedCurrentQuestion] = useState(false);
+  const advancementInProgress = useRef(false);
 
   const playerToken = tokenStorage.getPlayerToken(roomId);
 
@@ -58,6 +60,12 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
       // Check if game has started
       if (roomData.status === 'started' && roomData.questions) {
         setIsLoading(false);
+        // For guests joining mid-game: ensure gameState is correct
+        // If player hasn't submitted current question, show question screen
+        if (!hasSubmittedCurrentQuestion && gameState !== 'submitted') {
+          setGameState('question');
+        }
+        // If hasSubmittedCurrentQuestion is true, keep current gameState (likely 'submitted')
         
         // Fetch leaderboard from API
         fetchLeaderboard();
@@ -138,6 +146,7 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
       
       setIsCorrect(response.isCorrect);
       setGameState('submitted');
+      setHasSubmittedCurrentQuestion(true);
       
       // Refresh leaderboard after submitting answer
       fetchLeaderboard();
@@ -152,17 +161,16 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
       }
       setIsCorrect(correct);
       setGameState('submitted');
-      
-      // Don't auto-advance - wait for timer to expire
+      setHasSubmittedCurrentQuestion(true);
     }
   };
 
   // Start timer when question is shown
   useEffect(() => {
-    if (gameState === 'question' && room?.timePerQuestion) {
+    if (gameState === 'question' && room?.timePerQuestion && timer === undefined) {
       setTimer(room.timePerQuestion);
     }
-  }, [gameState, currentQuestionIndex, room?.timePerQuestion]);
+  }, [gameState, currentQuestionIndex, room?.timePerQuestion, timer]);
 
   // Timer countdown - continues even after submission
   useEffect(() => {
@@ -183,29 +191,40 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
 
   // Advance to next question when timer reaches 0 (whether user submitted or timed out)
   useEffect(() => {
-    if (timer === 0 && room && room.questions && currentQuestionIndex < room.questions.length) {
+    if (timer === 0 && room && room.questions && currentQuestionIndex < room.questions.length && !advancementInProgress.current) {
+      advancementInProgress.current = true;
+      
       // If user hasn't submitted yet, auto-submit as wrong
       if (gameState === 'question') {
-        const correct = false; // Timeout means wrong
-        setIsCorrect(correct);
+        setIsCorrect(false);
         setGameState('submitted');
       }
       
       // Advance to next question after timer expires
-      setTimeout(() => {
-        if (!room || !room.questions) return;
-        if (currentQuestionIndex < room.questions.length - 1) {
-          setCurrentQuestionIndex((prev) => prev + 1);
-          setGameState('question');
-          setTimer(undefined); // Reset timer for next question
-          // Refresh leaderboard when moving to next question
-          fetchLeaderboard();
-        } else {
-          // Game finished - fetch final leaderboard
-          fetchLeaderboard();
-          setGameState('finished');
-        }
+      const timeoutId = setTimeout(() => {
+        // Use functional updates to ensure we have latest values
+        setCurrentQuestionIndex((prevIndex) => {
+          const questionsLength = room?.questions?.length || 0;
+          if (prevIndex < questionsLength - 1) {
+            const nextIndex = prevIndex + 1;
+            // Reset submission state and timer first
+            setHasSubmittedCurrentQuestion(false);
+            setTimer(undefined); // Reset timer first
+            setGameState('question'); // Then set game state - this will trigger timer initialization
+            advancementInProgress.current = false; // Reset flag so next advancement can happen
+            fetchLeaderboard();
+            return nextIndex;
+          } else {
+            // Game finished
+            setGameState('finished');
+            advancementInProgress.current = false;
+            fetchLeaderboard();
+            return prevIndex;
+          }
+        });
       }, 2000); // Brief delay before advancing
+      
+      return () => clearTimeout(timeoutId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timer]);

@@ -1,5 +1,3 @@
--- Ultimate Trivia Database Schema for Supabase
-
 -- Rooms table: stores game room information
 CREATE TABLE IF NOT EXISTS rooms (
     room_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
