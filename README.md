@@ -2,6 +2,32 @@
 
 A real-time trivia game application built with Next.js (frontend) and FastAPI (backend). Create game rooms, join with friends, and test your knowledge!
 
+## Problem Statement
+Trivia, a popular and engaging American pastime, often proves challenging and exclusive for individuals from foreign cultures. Feedback from non-native participants highlights this difficulty:
+- "I don’t know any of the things they are asking…”
+- “This is like taking an exam I have never studied for…”
+- “As a non-American, how would I know things like this?”
+According to a friend, an experiment was conducted that demonstrated the impact of tailoring trivia topics to the audience. For example, when regular questions about American football and cars were replaced with questions about cricket and Asian geography for a group of international students at MIT, the audience displayed significantly more enthusiasm. This is compared to a control group answering standard trivia.
+
+## Project Summary
+This project is a multiplayer, web-based trivia game designed for global accessibility. AI features are there to help bring users together, whether it is an ice-breaker event or a workplace bonding event.
+Users can create and join custom game rooms via shareable URLs. The core feature is the ability to generate questions on user-selected topics using AI. The application supports real-time gameplay, allowing multiple participants to answer simultaneously from their mobile devices.
+Product Overview
+
+## Core Value Proposition
+Customizable Content: Users define trivia topics, ensuring relevant and engaging content for any group. AI will also suggest topics, e.g. “Things only cat owners understand”, “San Francisco Tech Scene” when user suggests an initial keyword, e.g. “cat”, “startup”
+Fun round recaps: Fun summaries like “Player A and Player B share interest in cricket!”
+AI-Powered Features: Get help with coming up fun and creative team names
+Instant Setup: No registration required: create a room and share a link
+Mobile-First: Designed for players joining from their phones
+
+## Target Users
+Social gatherings (parties, team building events)
+Educational groups (workplace, networking event for particular interest groups)
+Remote teams looking for engagement activities
+Trivia enthusiasts wanting custom content
+
+
 ## Project Structure
 
 ```
