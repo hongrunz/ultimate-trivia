@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import QuestionScreen from './QuestionScreen';
 import SubmittedScreen from './SubmittedScreen';
 import GameFinished from './GameFinished';
@@ -28,8 +28,6 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [hasSubmittedCurrentQuestion, setHasSubmittedCurrentQuestion] = useState(false);
-  const advancementInProgress = useRef(false);
 
   const playerToken = tokenStorage.getPlayerToken(roomId);
 
@@ -60,12 +58,6 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
       // Check if game has started
       if (roomData.status === 'started' && roomData.questions) {
         setIsLoading(false);
-        // For guests joining mid-game: ensure gameState is correct
-        // If player hasn't submitted current question, show question screen
-        if (!hasSubmittedCurrentQuestion && gameState !== 'submitted') {
-          setGameState('question');
-        }
-        // If hasSubmittedCurrentQuestion is true, keep current gameState (likely 'submitted')
         
         // Fetch leaderboard from API
         fetchLeaderboard();
@@ -146,12 +138,24 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
       
       setIsCorrect(response.isCorrect);
       setGameState('submitted');
-      setHasSubmittedCurrentQuestion(true);
       
       // Refresh leaderboard after submitting answer
       fetchLeaderboard();
       
-      // Don't auto-advance - wait for timer to expire
+      // Auto-advance to next question after 7 seconds (or wait for all players)
+      setTimeout(() => {
+        if (!room || !room.questions) return;
+        if (currentQuestionIndex < room.questions.length - 1) {
+          setCurrentQuestionIndex((prev) => prev + 1);
+          setGameState('question');
+          // Refresh leaderboard when moving to next question
+          fetchLeaderboard();
+        } else {
+          // Game finished - fetch final leaderboard
+          fetchLeaderboard();
+          setGameState('finished');
+        }
+      }, 7000);
     } catch (err) {
       console.error('Error submitting answer:', err);
       // Fallback to local check if API fails
@@ -161,20 +165,24 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
       }
       setIsCorrect(correct);
       setGameState('submitted');
-      setHasSubmittedCurrentQuestion(true);
+      
+      setTimeout(() => {
+        if (!room || !room.questions) return;
+        if (currentQuestionIndex < room.questions.length - 1) {
+          setCurrentQuestionIndex((prev) => prev + 1);
+          setGameState('question');
+        } else {
+          fetchLeaderboard();
+          setGameState('finished');
+        }
+      }, 7000);
     }
   };
 
   // Start timer when question is shown
   useEffect(() => {
-    if (gameState === 'question' && room?.timePerQuestion && timer === undefined) {
+    if (gameState === 'question' && room?.timePerQuestion) {
       setTimer(room.timePerQuestion);
-    }
-  }, [gameState, currentQuestionIndex, room?.timePerQuestion, timer]);
-
-  // Timer countdown - continues even after submission
-  useEffect(() => {
-    if (timer !== undefined && timer > 0 && (gameState === 'question' || gameState === 'submitted')) {
       const interval = setInterval(() => {
         setTimer((prev) => {
           if (prev === undefined || prev <= 1) {
@@ -187,44 +195,26 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
 
       return () => clearInterval(interval);
     }
-  }, [timer, gameState]);
+  }, [gameState, currentQuestionIndex, room?.timePerQuestion]);
 
-  // Advance to next question when timer reaches 0 (whether user submitted or timed out)
+  // Auto-submit when timer reaches 0
   useEffect(() => {
-    if (timer === 0 && room && room.questions && currentQuestionIndex < room.questions.length && !advancementInProgress.current) {
-      advancementInProgress.current = true;
+    if (timer === 0 && gameState === 'question' && room && room.questions && currentQuestionIndex < room.questions.length) {
+      const correct = false; // Timeout means wrong
+      setIsCorrect(correct);
+      setGameState('submitted');
       
-      // If user hasn't submitted yet, auto-submit as wrong
-      if (gameState === 'question') {
-        setIsCorrect(false);
-        setGameState('submitted');
-      }
-      
-      // Advance to next question after timer expires
-      const timeoutId = setTimeout(() => {
-        // Use functional updates to ensure we have latest values
-        setCurrentQuestionIndex((prevIndex) => {
-          const questionsLength = room?.questions?.length || 0;
-          if (prevIndex < questionsLength - 1) {
-            const nextIndex = prevIndex + 1;
-            // Reset submission state and timer first
-            setHasSubmittedCurrentQuestion(false);
-            setTimer(undefined); // Reset timer first
-            setGameState('question'); // Then set game state - this will trigger timer initialization
-            advancementInProgress.current = false; // Reset flag so next advancement can happen
-            fetchLeaderboard();
-            return nextIndex;
-          } else {
-            // Game finished
-            setGameState('finished');
-            advancementInProgress.current = false;
-            fetchLeaderboard();
-            return prevIndex;
-          }
-        });
-      }, 2000); // Brief delay before advancing
-      
-      return () => clearTimeout(timeoutId);
+      setTimeout(() => {
+        if (!room || !room.questions) return;
+        if (currentQuestionIndex < room.questions.length - 1) {
+          setCurrentQuestionIndex((prev) => prev + 1);
+          setGameState('question');
+        } else {
+          // Game finished - fetch final leaderboard
+          fetchLeaderboard();
+          setGameState('finished');
+        }
+      }, 7000);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timer]);
@@ -296,7 +286,6 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
         correctAnswer={currentQuestion?.options?.[currentQuestion.correctAnswer] || ''}
         explanation={currentQuestion?.explanation || ''}
         leaderboard={leaderboard}
-        timer={timer}
       />
     );
   }
