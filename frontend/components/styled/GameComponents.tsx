@@ -10,11 +10,11 @@ export const QRCodeContainer = styled.div`
   align-items: center;
 `;
 
-export const PlayerAvatar = styled.div`
+export const PlayerAvatar = styled.div<{ $bgColor?: string }>`
   width: 3rem;
   height: 3rem;
   border-radius: 50%;
-  background-color: #3b82f6; /* blue-500 */
+  background-color: ${props => props.$bgColor || '#3b82f6'}; /* dynamic or blue-500 fallback */
   display: flex;
   align-items: center;
   justify-content: center;

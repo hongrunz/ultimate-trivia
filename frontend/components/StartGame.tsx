@@ -132,7 +132,7 @@ export default function StartGame({ roomId }: StartGameProps) {
     <PageContainer>
       <FormCard>
         <GameContainer>
-          <Title>{room.name}</Title>
+          <Title>Ultimate Trivia!</Title>
 
           {/* QR Code */}
           <QRCodeContainer>
@@ -157,11 +157,27 @@ export default function StartGame({ roomId }: StartGameProps) {
             {/* Players list */}
             <PlayerList>
               {room.players.length > 0 ? (
-                room.players.map((player, index) => (
-                  <PlayerAvatar key={player.playerId}>
-                    {player.playerName.charAt(0).toUpperCase()}
-                  </PlayerAvatar>
-                ))
+                room.players.map((player) => {
+                  // Generate a consistent color based on player ID
+                  const colors = [
+                    '#3b82f6', // blue-500
+                    '#ef4444', // red-500
+                    '#10b981', // green-500
+                    '#f59e0b', // amber-500
+                    '#8b5cf6', // violet-500
+                    '#ec4899', // pink-500
+                    '#14b8a6', // teal-500
+                    '#f97316', // orange-500
+                  ];
+                  const colorIndex = player.playerId.charCodeAt(0) % colors.length;
+                  const bgColor = colors[colorIndex];
+                  
+                  return (
+                    <PlayerAvatar key={player.playerId} $bgColor={bgColor}>
+                      {player.playerName.charAt(0).toUpperCase()}
+                    </PlayerAvatar>
+                  );
+                })
               ) : (
                 <div style={{ color: '#6b7280', fontSize: '0.875rem' }}>No players yet</div>
               )}
