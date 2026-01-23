@@ -28,9 +28,12 @@ def get_redis_client() -> Redis:
     
     redis_url = os.getenv("REDIS_URL")
     redis_host = os.getenv("REDIS_HOST", "localhost")
-    redis_port = int(os.getenv("REDIS_PORT", "6379"))
+    # Handle empty strings from Railway environment variables
+    redis_port_str = os.getenv("REDIS_PORT", "6379")
+    redis_port = int(redis_port_str) if redis_port_str else 6379
     redis_password = os.getenv("REDIS_PASSWORD")
-    redis_db = int(os.getenv("REDIS_DB", "0"))
+    redis_db_str = os.getenv("REDIS_DB", "0")
+    redis_db = int(redis_db_str) if redis_db_str else 0
     
     # Import redis module for from_url function
     import redis as redis_module
