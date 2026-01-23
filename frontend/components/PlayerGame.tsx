@@ -323,6 +323,24 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
   }
 
   const currentQuestion = room.questions[currentQuestionIndex];
+  
+  // Safety check: ensure currentQuestion exists before accessing its properties
+  if (!currentQuestion) {
+    return (
+      <>
+        <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
+        <div style={{ 
+          textAlign: 'center', 
+          padding: '2rem', 
+          color: 'white',
+          fontSize: '1.2rem'
+        }}>
+          <p>Loading question {currentQuestionIndex + 1}...</p>
+        </div>
+      </>
+    );
+  }
+  
   const questionText = currentQuestion.question;
 
   if (gameState === 'finished') {
