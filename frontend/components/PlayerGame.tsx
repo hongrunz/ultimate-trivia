@@ -35,35 +35,6 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
 
   const playerToken = tokenStorage.getPlayerToken(roomId);
 
-  const fetchRoom = useCallback(async () => {
-    try {
-      const roomData = await api.getRoom(roomId);
-      setRoom(roomData);
-
-      // Check if game has started
-      if (roomData.status === 'started' && roomData.questions) {
-        setIsLoading(false);
-        
-        // Set game started timestamp if available
-        if (roomData.startedAt) {
-          setGameStartedAt(new Date(roomData.startedAt));
-        }
-        
-        // Fetch leaderboard from API
-        fetchLeaderboard();
-      } else if (roomData.status === 'finished') {
-        setGameState('finished');
-        setIsLoading(false);
-        // Fetch leaderboard for finished game
-        fetchLeaderboard();
-      }
-    } catch (err) {
-      console.error('Error fetching room:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load game');
-      setIsLoading(false);
-    }
-  }, [roomId]);
-
   const fetchLeaderboard = useCallback(async () => {
     try {
       const leaderboardData: LeaderboardResponse = await api.getLeaderboard(roomId);
@@ -112,20 +83,61 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
     }
   }, [roomId, room]);
 
+  const fetchRoom = useCallback(async () => {
+    try {
+      const roomData = await api.getRoom(roomId);
+      setRoom(roomData);
+
+      // Check if game has started
+      if (roomData.status === 'started' && roomData.questions) {
+        setIsLoading(false);
+        
+        // Set game started timestamp if available
+        if (roomData.startedAt) {
+          const startTime = new Date(roomData.startedAt);
+          if (!isNaN(startTime.getTime())) {
+            console.log('Game started at:', startTime.toISOString());
+            setGameStartedAt(startTime);
+          } else {
+            console.error('Invalid startedAt timestamp:', roomData.startedAt);
+          }
+        }
+        
+        // Fetch leaderboard from API
+        fetchLeaderboard();
+      } else if (roomData.status === 'finished') {
+        setGameState('finished');
+        setIsLoading(false);
+        // Fetch leaderboard for finished game
+        fetchLeaderboard();
+      }
+    } catch (err) {
+      console.error('Error fetching room:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load game');
+      setIsLoading(false);
+    }
+  }, [roomId, fetchLeaderboard]);
+
   // Initial room fetch
   useEffect(() => {
     fetchRoom();
   }, [fetchRoom]);
 
   // WebSocket message handler
-  const handleWebSocketMessage = useCallback((message: any) => {
+  const handleWebSocketMessage = useCallback((message: { type: string; startedAt?: string; [key: string]: unknown }) => {
     console.log('WebSocket message received:', message);
     
     switch (message.type) {
       case 'game_started':
         // Game started - set timestamp for timer sync
         if (message.startedAt) {
-          setGameStartedAt(new Date(message.startedAt));
+          const startTime = new Date(message.startedAt);
+          if (!isNaN(startTime.getTime())) {
+            console.log('WebSocket: Game started at:', startTime.toISOString());
+            setGameStartedAt(startTime);
+          } else {
+            console.error('WebSocket: Invalid startedAt timestamp:', message.startedAt);
+          }
         }
         // Refresh room data to get questions
         fetchRoom();
@@ -209,6 +221,15 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
         // Calculate elapsed time since game started
         const now = new Date();
         const elapsedSeconds = Math.floor((now.getTime() - gameStartedAt.getTime()) / 1000);
+        
+        // Safety check: if elapsed time is negative (clock skew), reset to use local timer
+        if (elapsedSeconds < 0) {
+          console.warn('Clock skew detected: server time is ahead of client time. Elapsed:', elapsedSeconds);
+          console.warn('Server time:', gameStartedAt.toISOString(), 'Client time:', now.toISOString());
+          setGameStartedAt(null); // Clear to use local timer
+          setCurrentQuestionIndex(0);
+          return;
+        }
         
         // Each question takes timePerQuestion seconds
         const totalTimePerRound = room.timePerQuestion;
