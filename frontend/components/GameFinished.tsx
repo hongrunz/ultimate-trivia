@@ -41,10 +41,11 @@ export default function GameFinished({
     <GameScreenContainer>
       <GameCard>
         <GameHeader>
-          <CircularBadge>{totalQuestions}/{totalQuestions}</CircularBadge>
-          {finalScore !== undefined && <CircularBadge>{finalScore}</CircularBadge>}
+          {finalScore !== undefined && (
+            <CircularBadge>Score: {finalScore}</CircularBadge>
+          )}
         </GameHeader>
-        <GameTitle>Ultimate Trivia!</GameTitle>
+        <GameTitle>Game Finished! 🎉</GameTitle>
         <LeaderboardSection>
           <LeaderboardHeading>Leader board:</LeaderboardHeading>
           <LeaderboardList>
