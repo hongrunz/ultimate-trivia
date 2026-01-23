@@ -41,9 +41,13 @@ export function useWebSocket(roomId: string | null, options: UseWebSocketOptions
 
     try {
       // Connect to WebSocket
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//localhost:8000/ws/${roomId}`;
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const protocol = apiUrl.startsWith('https://') ? 'wss:' : 'ws:';
+      // Remove http:// or https:// prefix and construct WebSocket URL
+      const host = apiUrl.replace(/^https?:\/\//, '');
+      const wsUrl = `${protocol}//${host}/ws/${roomId}`;
       
+      console.log('Connecting to WebSocket:', wsUrl);
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
