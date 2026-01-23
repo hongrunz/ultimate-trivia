@@ -61,7 +61,8 @@ class RoomStore:
         r = get_redis_client()
         
         room_id = uuid4()
-        now = datetime.now()
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
         
         room_dict = {
             "room_id": str(room_id),
@@ -138,9 +139,10 @@ class RoomStore:
         if not r.exists(room_key):
             raise ValueError(f"Room {room_id} not found")
         
+        from datetime import timezone
         update_data = {
             "status": status,
-            "updated_at": datetime.now().isoformat()
+            "updated_at": datetime.now(timezone.utc).isoformat()
         }
         if started_at:
             update_data["started_at"] = started_at.isoformat()
@@ -164,7 +166,8 @@ class PlayerStore:
         
         player_id = uuid4()
         player_token = generate_token()
-        now = datetime.now()
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
         
         player_dict = {
             "player_id": str(player_id),
@@ -318,7 +321,8 @@ class QuestionStore:
         r = get_redis_client()
         
         questions_list = []
-        now = datetime.now()
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
         
         for q in questions:
             question_id = uuid4()

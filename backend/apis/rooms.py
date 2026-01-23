@@ -247,8 +247,9 @@ async def start_game(room_id: str, hostToken: Optional[str] = Header(None, alias
         
         QuestionStore.create_questions(questions_to_create)
         
-        # Update room status
-        started_at = datetime.now()
+        # Update room status (use UTC time for consistency across timezones)
+        from datetime import timezone
+        started_at = datetime.now(timezone.utc)
         RoomStore.update_room_status(room_uuid, "started", started_at)
         
         # Find the host's player record to get their player token
