@@ -203,6 +203,9 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
   useEffect(() => {
     if ((gameState === 'question' || gameState === 'submitted') && room?.timePerQuestion && gameStartedAt && room.questions) {
       const updateTimer = () => {
+        // Safety check: ensure questions still exist
+        if (!room.questions) return;
+        
         // Calculate elapsed time since game started
         const now = new Date();
         const elapsedSeconds = Math.floor((now.getTime() - gameStartedAt.getTime()) / 1000);
@@ -221,7 +224,7 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
         }
         
         // Check if game should be finished
-        if (calculatedQuestionIndex >= room.questions.length && gameState !== 'finished') {
+        if (calculatedQuestionIndex >= room.questions?.length) {
           setGameState('finished');
           fetchLeaderboard();
           return;
