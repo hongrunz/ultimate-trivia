@@ -24,6 +24,9 @@ import { useWebSocket } from '../lib/useWebSocket';
 import { useBackgroundMusic } from '../lib/useBackgroundMusic';
 import MusicControl from './MusicControl';
 import { getSessionMode } from '../lib/deviceDetection';
+import { ErrorText } from './styled/ErrorComponents';
+import { BigScreenNotice, WarningText } from './styled/InfoComponents';
+import { SuccessText, MutedText } from './styled/StatusComponents';
 
 interface StartGameProps {
   roomId: string;
@@ -175,7 +178,7 @@ export default function StartGame({ roomId }: StartGameProps) {
           <FormCard>
             <GameContainer>
               <Title>Error</Title>
-              <div style={{ color: '#dc2626', marginTop: '1rem' }}>{error}</div>
+              <ErrorText>{error}</ErrorText>
             </GameContainer>
           </FormCard>
         </PageContainer>
@@ -197,24 +200,15 @@ export default function StartGame({ roomId }: StartGameProps) {
 
           {/* Big Screen Mode Notice */}
           {sessionMode === 'display' && (
-            <div style={{ 
-              textAlign: 'center', 
-              marginBottom: '1.5rem', 
-              padding: '1rem',
-              backgroundColor: '#dbeafe',
-              borderRadius: '0.5rem',
-              fontSize: '1rem',
-              color: '#1f2937',
-              border: '2px solid #3b82f6'
-            }}>
+            <BigScreenNotice>
               <strong>🖥️ Big Screen Mode</strong>
               <br />
               This screen will display questions and leaderboard.
               <br />
-              <span style={{ color: '#dc2626', fontWeight: 'bold' }}>
+              <WarningText>
                 You must join as a player on mobile to answer questions!
-              </span>
-            </div>
+              </WarningText>
+            </BigScreenNotice>
           )}
 
           {/* QR Code */}
@@ -229,11 +223,7 @@ export default function StartGame({ roomId }: StartGameProps) {
             copy URL
           </ButtonPrimary>
 
-          {error && (
-            <div style={{ color: '#dc2626', marginBottom: '1rem', fontSize: '0.875rem' }}>
-              {error}
-            </div>
-          )}
+          {error && <ErrorText style={{ marginBottom: '1rem' }}>{error}</ErrorText>}
 
           {/* Bottom section with players and start button */}
           <BottomSection>
@@ -262,7 +252,7 @@ export default function StartGame({ roomId }: StartGameProps) {
                   );
                 })
               ) : (
-                <div style={{ color: '#6b7280', fontSize: '0.875rem' }}>No players yet</div>
+                <MutedText>No players yet</MutedText>
               )}
               {room.players.length > 5 && <Ellipsis>...</Ellipsis>}
             </PlayerList>
@@ -277,7 +267,7 @@ export default function StartGame({ roomId }: StartGameProps) {
               </ButtonSuccess>
             )}
             {room.status === 'started' && (
-              <div style={{ color: '#16a34a', fontWeight: 600 }}>Game Started</div>
+              <SuccessText>Game Started</SuccessText>
             )}
           </BottomSection>
         </GameContainer>

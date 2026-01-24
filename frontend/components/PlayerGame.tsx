@@ -7,9 +7,7 @@ import SubmittedScreen from './SubmittedScreen';
 import GameFinished from './GameFinished';
 import { api, tokenStorage, RoomResponse, LeaderboardResponse } from '../lib/api';
 import { useWebSocket } from '../lib/useWebSocket';
-import { useBackgroundMusic } from '../lib/useBackgroundMusic';
 import { useGameTimer } from '../lib/useGameTimer';
-import MusicControl from './MusicControl';
 import { 
   PageContainer, 
   FormCard, 
@@ -17,6 +15,8 @@ import {
   ButtonPrimary,
   ButtonContainerCenter 
 } from './styled/FormComponents';
+import { ErrorBox, ErrorIcon, ErrorHeading, ErrorMessage } from './styled/ErrorComponents';
+import { CenteredMessage } from './styled/StatusComponents';
 
 interface PlayerGameProps {
   roomId: string;
@@ -197,13 +197,6 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
     onMessage: handleWebSocketMessage,
   });
 
-  // Background music
-  const { isMuted, toggleMute, isLoaded } = useBackgroundMusic('/background-music.mp3', {
-    autoPlay: true,
-    loop: true,
-    volume: 0.3,
-  });
-
   const handleSubmitAnswer = async (answer: string) => {
     if (!room?.questions || !playerToken) return;
 
@@ -250,91 +243,45 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
   // No player token error - must join first
   if (hasNoToken) {
     return (
-      <>
-        <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
-        <PageContainer>
-          <FormCard>
-            <Title>Access Denied</Title>
-            <div style={{ 
-              textAlign: 'center', 
-              marginBottom: '2rem',
-              padding: '1.5rem',
-              backgroundColor: '#fee2e2',
-              borderRadius: '0.5rem',
-              border: '2px solid #dc2626'
-            }}>
-              <div style={{ 
-                fontSize: '3rem', 
-                marginBottom: '1rem' 
-              }}>
-                🚫
-              </div>
-              <div style={{ 
-                fontSize: '1.25rem', 
-                fontWeight: 'bold', 
-                color: '#dc2626',
-                marginBottom: '0.5rem'
-              }}>
-                You must join the game first!
-              </div>
-              <div style={{ 
-                fontSize: '0.95rem', 
-                color: '#1f2937',
-                marginTop: '0.5rem'
-              }}>
-                You don&apos;t have permission to access this game. 
-                Please join the game using your name.
-              </div>
-            </div>
-            <ButtonContainerCenter>
-              <ButtonPrimary onClick={handleJoinRedirect}>
-                Join Game
-              </ButtonPrimary>
-            </ButtonContainerCenter>
-          </FormCard>
-        </PageContainer>
-      </>
+      <PageContainer>
+        <FormCard>
+          <Title>Access Denied</Title>
+          <ErrorBox>
+            <ErrorIcon>🚫</ErrorIcon>
+            <ErrorHeading>You must join the game first!</ErrorHeading>
+            <ErrorMessage>
+              You don&apos;t have permission to access this game. 
+              Please join the game using your name.
+            </ErrorMessage>
+          </ErrorBox>
+          <ButtonContainerCenter>
+            <ButtonPrimary onClick={handleJoinRedirect}>
+              Join Game
+            </ButtonPrimary>
+          </ButtonContainerCenter>
+        </FormCard>
+      </PageContainer>
     );
   }
 
   // Loading state
   if (isLoading) {
-    return (
-      <>
-        <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
-        <div style={centeredScreenStyle}>Loading game...</div>
-      </>
-    );
+    return <div style={centeredScreenStyle}>Loading game...</div>;
   }
 
   // Error state
   if (error) {
-    return (
-      <>
-        <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
-        <div style={centeredScreenStyle}>Error: {error}</div>
-      </>
-    );
+    return <div style={centeredScreenStyle}>Error: {error}</div>;
   }
 
   // Waiting for game to start
   if (!room?.questions?.length) {
-    return (
-      <>
-        <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
-        <div style={centeredScreenStyle}>Waiting for game to start...</div>
-      </>
-    );
+    return <div style={centeredScreenStyle}>Waiting for game to start...</div>;
   }
 
   // Check for server sync during active gameplay
   if ((gameState === 'question' || gameState === 'submitted') && !gameStartedAt) {
-    return (
-      <>
-        <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
-        <div style={centeredScreenStyle}>Synchronizing with server...</div>
-      </>
-    );
+    return <div style={centeredScreenStyle}>Synchronizing with server...</div>;
   }
 
   const currentQuestion = room.questions[currentQuestionIndex];
@@ -342,59 +289,47 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
   // Question loading state
   if (!currentQuestion) {
     return (
-      <>
-        <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
-        <div style={{ textAlign: 'center', padding: '2rem', color: 'white', fontSize: '1.2rem' }}>
-          <p>Loading question {currentQuestionIndex + 1}...</p>
-        </div>
-      </>
+      <CenteredMessage>
+        <p>Loading question {currentQuestionIndex + 1}...</p>
+      </CenteredMessage>
     );
   }
 
   // Game finished state
   if (gameState === 'finished') {
     return (
-      <>
-        <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
-        <GameFinished
-          totalQuestions={room.questionsPerRound}
-          finalScore={score}
-          leaderboard={leaderboard}
-        />
-      </>
+      <GameFinished
+        totalQuestions={room.questionsPerRound}
+        finalScore={score}
+        leaderboard={leaderboard}
+      />
     );
   }
 
   // Answer submitted state
   if (gameState === 'submitted') {
     return (
-      <>
-        <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
-        <SubmittedScreen
-          currentQuestion={currentQuestionIndex + 1}
-          totalQuestions={room.questionsPerRound}
-          isCorrect={isCorrect}
-          correctAnswer={currentQuestion.options[currentQuestion.correctAnswer]}
-          explanation={currentQuestion.explanation || ''}
-          leaderboard={leaderboard}
-          timer={timer}
-        />
-      </>
+      <SubmittedScreen
+        currentQuestion={currentQuestionIndex + 1}
+        totalQuestions={room.questionsPerRound}
+        isCorrect={isCorrect}
+        correctAnswer={currentQuestion.options[currentQuestion.correctAnswer]}
+        explanation={currentQuestion.explanation || ''}
+        leaderboard={leaderboard}
+        timer={timer}
+      />
     );
   }
 
   // Active question state
   return (
-    <>
-      <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
-      <QuestionScreen
-        currentQuestion={currentQuestionIndex + 1}
-        totalQuestions={room.questionsPerRound}
-        timer={timer}
-        question={currentQuestion.question}
-        options={currentQuestion.options}
-        onSubmit={handleSubmitAnswer}
-      />
-    </>
+    <QuestionScreen
+      currentQuestion={currentQuestionIndex + 1}
+      totalQuestions={room.questionsPerRound}
+      timer={timer}
+      question={currentQuestion.question}
+      options={currentQuestion.options}
+      onSubmit={handleSubmitAnswer}
+    />
   );
 }

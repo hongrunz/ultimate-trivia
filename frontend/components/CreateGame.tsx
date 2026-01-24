@@ -13,6 +13,8 @@ import {
   ButtonPrimary,
   ButtonContainer,
 } from './styled/FormComponents';
+import { ErrorText } from './styled/ErrorComponents';
+import { InfoBox } from './styled/InfoComponents';
 import { api, tokenStorage } from '../lib/api';
 import { getSessionMode, getDeviceType } from '../lib/deviceDetection';
 
@@ -83,15 +85,7 @@ export default function CreateGame() {
         <Title>Ultimate Trivia!</Title>
         
         {/* Show device mode info */}
-        <div style={{ 
-          textAlign: 'center', 
-          marginBottom: '1rem', 
-          padding: '0.5rem',
-          backgroundColor: deviceType === 'web' ? '#dbeafe' : '#fef3c7',
-          borderRadius: '0.5rem',
-          fontSize: '0.875rem',
-          color: '#1f2937'
-        }}>
+        <InfoBox $variant={deviceType}>
           {deviceType === 'web' ? (
             <>
               🖥️ <strong>Big Screen Mode:</strong> This device will display questions and leaderboard. 
@@ -102,7 +96,7 @@ export default function CreateGame() {
               📱 <strong>Mobile Mode:</strong> You&apos;ll answer questions from this device.
             </>
           )}
-        </div>
+        </InfoBox>
         
         <FormGroup>
           {sessionMode === 'player' && (
@@ -153,11 +147,7 @@ export default function CreateGame() {
 
         </FormGroup>
 
-        {error && (
-          <div style={{ color: '#dc2626', marginTop: '1rem', fontSize: '0.875rem' }}>
-            {error}
-          </div>
-        )}
+        {error && <ErrorText>{error}</ErrorText>}
         
         <ButtonContainer>
           <ButtonPrimary
