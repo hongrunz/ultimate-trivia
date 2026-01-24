@@ -31,7 +31,7 @@ class CreateRoomResponse(BaseModel):
 
 class JoinRoomRequest(BaseModel):
     playerName: str
-    topic: Optional[str] = None
+    topic: str  # Required field
 
 
 class JoinRoomResponse(BaseModel):
@@ -188,11 +188,14 @@ async def join_room(room_id: str, request: JoinRoomRequest):
         if room.status != "waiting":
             raise HTTPException(status_code=400, detail="Room is no longer accepting players")
         
+        # Validate topic is not empty
+        if not request.topic or not request.topic.strip():
+            raise HTTPException(status_code=400, detail="Topic is required")
+        
         player = PlayerStore.create_player(room_uuid, request.playerName)
         
-        # Add topic if provided
-        if request.topic and request.topic.strip():
-            TopicStore.add_topic(room_uuid, player.player_id, request.topic)
+        # Add topic (now required)
+        TopicStore.add_topic(room_uuid, player.player_id, request.topic)
         
         # Broadcast player joined event
         await manager.broadcast_to_room(room_id, {

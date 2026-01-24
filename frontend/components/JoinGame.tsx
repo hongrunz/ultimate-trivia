@@ -31,6 +31,11 @@ export default function JoinGame() {
       return;
     }
 
+    if (!topic.trim()) {
+      setError('Please enter a topic');
+      return;
+    }
+
     if (!roomId) {
       setError('Room ID is required');
       return;
@@ -40,7 +45,7 @@ export default function JoinGame() {
     setError('');
 
     try {
-      const response = await api.joinRoom(roomId, guestName.trim(), topic.trim() || undefined);
+      const response = await api.joinRoom(roomId, guestName.trim(), topic.trim());
 
       // Store player token
       tokenStorage.setPlayerToken(roomId, response.playerToken);
@@ -76,13 +81,13 @@ export default function JoinGame() {
           </FieldContainer>
 
           <FieldContainer>
-            <Label htmlFor="topic">Topic Suggestion (optional):</Label>
+            <Label htmlFor="topic">Topic Suggestion:</Label>
             <Input
               id="topic"
               type="text"
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
-              placeholder="Suggest a topic for questions"
+              placeholder="Enter a topic for questions"
               onKeyPress={(e) => {
                 if (e.key === 'Enter') {
                   handleJoin();
@@ -99,7 +104,7 @@ export default function JoinGame() {
         <ButtonContainerCenter>
           <ButtonLarge
             onClick={handleJoin}
-            disabled={!guestName.trim() || !roomId || isLoading}
+            disabled={!guestName.trim() || !topic.trim() || !roomId || isLoading}
           >
             {isLoading ? 'Joining...' : 'Join'}
           </ButtonLarge>

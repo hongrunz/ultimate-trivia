@@ -19,7 +19,7 @@ export interface CreateRoomResponse {
 
 export interface JoinRoomRequest {
   playerName: string;
-  topic?: string;
+  topic: string;  // Required field
 }
 
 export interface JoinRoomResponse {
@@ -129,7 +129,7 @@ export const api = {
   /**
    * Join an existing room
    */
-  async joinRoom(roomId: string, playerName: string, topic?: string): Promise<JoinRoomResponse> {
+  async joinRoom(roomId: string, playerName: string, topic: string): Promise<JoinRoomResponse> {
     return fetchAPI<JoinRoomResponse>(`/api/rooms/${roomId}/join`, {
       method: 'POST',
       body: JSON.stringify({ playerName, topic }),
