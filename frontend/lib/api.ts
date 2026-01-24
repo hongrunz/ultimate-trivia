@@ -31,12 +31,14 @@ export interface Player {
   playerId: string;
   playerName: string;
   score?: number;
+  topicScore?: { [topic: string]: number };  // Points per topic
   joinedAt: string;
 }
 
 export interface Question {
   id: string;
   question: string;
+  topics: string[];  // Topics associated with this question
   options: string[];
   correctAnswer: number;
   explanation?: string;
@@ -67,6 +69,7 @@ export interface StartGameResponse {
 export interface LeaderboardEntry {
   playerId: string;
   score: number;
+  topicScore: { [topic: string]: number };  // Points per topic
 }
 
 export interface LeaderboardResponse {

@@ -27,6 +27,7 @@ interface LeaderboardEntry {
   rank: number;
   playerName: string;
   points: number;
+  topicScore?: { [topic: string]: number };
 }
 
 type GameState = 'question' | 'submitted' | 'finished';
@@ -69,6 +70,7 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
         rank: currentRank,
         playerName: playerMap.get(entry.playerId) || `Player ${entry.playerId.slice(0, 8)}`,
         points: entry.score,
+        topicScore: entry.topicScore,
       };
     });
   }, []);
@@ -339,6 +341,7 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
       totalQuestions={room.questionsPerRound}
       timer={timer}
       question={currentQuestion.question}
+      topics={currentQuestion.topics}
       options={currentQuestion.options}
       onSubmit={handleSubmitAnswer}
     />

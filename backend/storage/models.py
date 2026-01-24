@@ -46,6 +46,7 @@ class Player(PlayerBase):
     room_id: UUID
     player_token: str
     score: int = 0
+    topic_score: dict[str, int] = {}  # Points scored per topic
     joined_at: datetime
 
     class Config:
@@ -54,6 +55,7 @@ class Player(PlayerBase):
 
 class QuestionBase(BaseModel):
     question_text: str
+    topics: List[str] = []  # Topics associated with this question
     options: List[str]
     correct_answer: int
     explanation: Optional[str] = None

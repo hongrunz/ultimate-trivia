@@ -30,16 +30,17 @@ def get_gemini_api_key() -> str:
 def generate_questions_with_llm(topics: List[str], count: int) -> List[Dict[str, Any]]:
     """
     Returns list of dicts:
-      { "question": str, "options": [str,str,str,str], "correct_answer": int, "explanation": str }
+      { "question": str, "topics": str[], "options": str[], "correct_answer": int, "explanation": str }
     """
 
     client = genai.Client(api_key=get_gemini_api_key())
 
     topics_str = ", ".join(topics)
-    prompt_text = f"""Generate {count} trivia questions on the following topics: {topics_str}.
+    prompt_text = f"""Generate {count} trivia questions on the following topics: {topics_str} where each question is related to one or two of the topics.
 
 Return ONLY a valid JSON array of objects. Each object MUST have:
 - "question": string
+- "topics": array of strings
 - "options": array of exactly 4 strings
 - "correct_answer": integer index 0-3 (0 means first option)
 - "explanation": string
@@ -121,6 +122,7 @@ Return ONLY a valid JSON array of objects. Each object MUST have:
         formatted.append(
             {
                 "question": q.get("question", ""),
+                "topics": q.get("topics", []),
                 "options": options,
                 "correct_answer": correct_idx,
                 "explanation": q.get("explanation", ""),

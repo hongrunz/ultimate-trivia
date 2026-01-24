@@ -8,14 +8,18 @@ import {
   CircularBadge,
   GameTitle,
   QuestionText,
+  TopicsContainer,
+  TopicBadge,
 } from './styled/GameComponents';
 import { OptionsContainer, OptionButton } from './styled/OptionsContainer';
+import { MutedText } from './styled/StatusComponents';
 
 interface QuestionScreenProps {
   currentQuestion: number;
   totalQuestions: number;
   timer?: number;
   question: string;
+  topics?: string[];
   options: string[];
   onSubmit: (answer: string) => void;
 }
@@ -25,6 +29,7 @@ export default function QuestionScreen({
   totalQuestions,
   timer,
   question,
+  topics,
   options,
   onSubmit,
 }: QuestionScreenProps) {
@@ -43,6 +48,7 @@ export default function QuestionScreen({
 
   // Ensure options has a default value
   const safeOptions = options || [];
+  const safeTopics = topics || [];
 
   return (
     <GameScreenContainer>
@@ -52,6 +58,23 @@ export default function QuestionScreen({
           {mounted && timer !== undefined && <CircularBadge>{timer}</CircularBadge>}
         </GameHeader>
         <GameTitle>Ultimate Trivia!</GameTitle>
+        
+        {/* Display topics */}
+        {safeTopics.length > 0 && (
+          <div style={{ marginBottom: '1rem' }}>
+            <MutedText style={{ fontSize: '0.75rem', marginBottom: '0.25rem', textAlign: 'center' }}>
+              Topics:
+            </MutedText>
+            <TopicsContainer>
+              {safeTopics.map((topic, index) => (
+                <TopicBadge key={index} style={{ fontSize: '0.75rem', padding: '0.25rem 0.75rem' }}>
+                  {topic}
+                </TopicBadge>
+              ))}
+            </TopicsContainer>
+          </div>
+        )}
+        
         <QuestionText>{question}</QuestionText>
         {safeOptions.length > 0 && (
           <OptionsContainer>

@@ -43,12 +43,14 @@ class PlayerResponse(BaseModel):
     playerId: str
     playerName: str
     score: int = 0
+    topicScore: dict[str, int] = {}  # Points per topic
     joinedAt: str
 
 
 class QuestionResponse(BaseModel):
     id: str
     question: str
+    topics: list[str]  # Topics associated with this question
     options: list[str]
     correctAnswer: int
     explanation: Optional[str] = None
@@ -130,6 +132,7 @@ async def get_room(room_id: str):
                 playerId=str(p.player_id),
                 playerName=p.player_name,
                 score=p.score if hasattr(p, 'score') else 0,
+                topicScore=p.topic_score if hasattr(p, 'topic_score') else {},
                 joinedAt=p.joined_at.isoformat()
             )
             for p in players
@@ -143,6 +146,7 @@ async def get_room(room_id: str):
                 QuestionResponse(
                     id=str(q.question_id),
                     question=q.question_text,
+                    topics=q.topics,
                     options=q.options,
                     correctAnswer=q.correct_answer,
                     explanation=q.explanation
@@ -265,6 +269,7 @@ async def start_game(room_id: str, hostToken: Optional[str] = Header(None, alias
             QuestionCreate(
                 room_id=room_uuid,
                 question_text=q["question"],
+                topics=q.get("topics", []),
                 options=q["options"],
                 correct_answer=q["correct_answer"],
                 explanation=q.get("explanation"),
@@ -365,7 +370,7 @@ async def submit_answer(
         # Update score: 1 point for correct answer
         points = 1 if is_correct else 0
         if points > 0:
-            updated_player = PlayerStore.update_player_score(player.player_id, points)
+            updated_player = PlayerStore.update_player_score(player.player_id, points, question.topics)
             current_score = updated_player.score
         else:
             current_score = player.score
@@ -396,6 +401,7 @@ async def submit_answer(
 class LeaderboardEntry(BaseModel):
     playerId: str
     score: int
+    topicScore: dict[str, int] = {}  # Points per topic
 
 
 class LeaderboardResponse(BaseModel):
@@ -419,7 +425,8 @@ async def get_leaderboard(room_id: str):
         leaderboard_entries = [
             LeaderboardEntry(
                 playerId=str(p.player_id),
-                score=p.score if hasattr(p, 'score') else 0
+                score=p.score if hasattr(p, 'score') else 0,
+                topicScore=p.topic_score if hasattr(p, 'topic_score') else {}
             )
             for p in players
         ]

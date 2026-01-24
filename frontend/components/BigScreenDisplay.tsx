@@ -7,7 +7,7 @@ import { useWebSocket } from '../lib/useWebSocket';
 import { useBackgroundMusic } from '../lib/useBackgroundMusic';
 import { useGameTimer } from '../lib/useGameTimer';
 import MusicControl from './MusicControl';
-import { GameScreenContainer, GameTitle, LeaderboardList } from './styled/GameComponents';
+import { GameScreenContainer, GameTitle, LeaderboardList, TopicsContainer, TopicBadge } from './styled/GameComponents';
 import {
   BigScreenCard,
   BigScreenHeader,
@@ -21,6 +21,7 @@ import {
   BigScreenLeaderboardItem,
   ErrorTitle,
 } from './styled/BigScreenComponents';
+import { MutedText } from './styled/StatusComponents';
 
 interface BigScreenDisplayProps {
   roomId: string;
@@ -31,6 +32,7 @@ interface LeaderboardEntry {
   rank: number;
   playerName: string;
   points: number;
+  topicScore?: { [topic: string]: number };
 }
 
 type GameState = 'question' | 'submitted' | 'finished';
@@ -65,6 +67,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
         rank: currentRank,
         playerName: playerMap.get(entry.playerId) || `Player ${entry.playerId.slice(0, 8)}`,
         points: entry.score,
+        topicScore: entry.topicScore,
       };
     });
   }, []);
@@ -319,6 +322,22 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
           {/* Title */}
           <GameTitle>Ultimate Trivia!</GameTitle>
 
+          {/* Display topics */}
+          {currentQuestion.topics && currentQuestion.topics.length > 0 && (
+            <div style={{ marginBottom: '1.5rem' }}>
+              <MutedText style={{ fontSize: '1rem', marginBottom: '0.5rem', textAlign: 'center' }}>
+                Topics:
+              </MutedText>
+              <TopicsContainer>
+                {currentQuestion.topics.map((topic, index) => (
+                  <TopicBadge key={index}>
+                    {topic}
+                  </TopicBadge>
+                ))}
+              </TopicsContainer>
+            </div>
+          )}
+
           {/* Question text */}
           <BigScreenQuestionText>
             {currentQuestion.question}
@@ -351,8 +370,19 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
               <LeaderboardList>
                 {leaderboard.slice(0, 5).map((entry) => (
                   <BigScreenLeaderboardItem key={entry.playerId}>
-                    <span>No{entry.rank} {entry.playerName}</span>
-                    <span>... {entry.points} pts,</span>
+                    <div>
+                      <span>No{entry.rank} {entry.playerName}</span>
+                      <span>... {entry.points} pts</span>
+                    </div>
+                    {entry.topicScore && Object.keys(entry.topicScore).length > 0 && (
+                      <div style={{ marginTop: '0.5rem', display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                        {Object.entries(entry.topicScore).map(([topic, score]) => (
+                          <TopicBadge key={topic} style={{ fontSize: '0.75rem', padding: '0.25rem 0.75rem' }}>
+                            {topic}: {score}
+                          </TopicBadge>
+                        ))}
+                      </div>
+                    )}
                   </BigScreenLeaderboardItem>
                 ))}
               </LeaderboardList>
