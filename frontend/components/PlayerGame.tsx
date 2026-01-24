@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import QuestionScreen from './QuestionScreen';
 import SubmittedScreen from './SubmittedScreen';
 import GameFinished from './GameFinished';
@@ -9,6 +10,13 @@ import { useWebSocket } from '../lib/useWebSocket';
 import { useBackgroundMusic } from '../lib/useBackgroundMusic';
 import { useGameTimer } from '../lib/useGameTimer';
 import MusicControl from './MusicControl';
+import { 
+  PageContainer, 
+  FormCard, 
+  Title, 
+  ButtonPrimary,
+  ButtonContainerCenter 
+} from './styled/FormComponents';
 
 interface PlayerGameProps {
   roomId: string;
@@ -23,6 +31,9 @@ interface LeaderboardEntry {
 type GameState = 'question' | 'submitted' | 'finished';
 
 export default function PlayerGame({ roomId }: PlayerGameProps) {
+  const router = useRouter();
+  const playerToken = tokenStorage.getPlayerToken(roomId);
+  
   const [room, setRoom] = useState<RoomResponse | null>(null);
   const [gameState, setGameState] = useState<GameState>('question');
   const [isCorrect, setIsCorrect] = useState(false);
@@ -32,7 +43,8 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
   const [error, setError] = useState('');
   const [gameStartedAt, setGameStartedAt] = useState<Date | null>(null);
 
-  const playerToken = tokenStorage.getPlayerToken(roomId);
+  // Check if player has a valid token - if not, show error immediately
+  const hasNoToken = !playerToken;
 
   // Helper function to map leaderboard data to UI format
   const mapLeaderboardData = useCallback((
@@ -123,8 +135,10 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
 
   // Initial room fetch
   useEffect(() => {
+    if (hasNoToken) return; // Don't fetch if no token
     fetchRoom();
-  }, [fetchRoom]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // WebSocket message handler
   const handleWebSocketMessage = useCallback((message: {
@@ -228,6 +242,60 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
     justifyContent: 'center',
     color: '#ffffff'
   };
+
+  const handleJoinRedirect = () => {
+    router.push(`/join?roomId=${roomId}`);
+  };
+
+  // No player token error - must join first
+  if (hasNoToken) {
+    return (
+      <>
+        <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
+        <PageContainer>
+          <FormCard>
+            <Title>Access Denied</Title>
+            <div style={{ 
+              textAlign: 'center', 
+              marginBottom: '2rem',
+              padding: '1.5rem',
+              backgroundColor: '#fee2e2',
+              borderRadius: '0.5rem',
+              border: '2px solid #dc2626'
+            }}>
+              <div style={{ 
+                fontSize: '3rem', 
+                marginBottom: '1rem' 
+              }}>
+                🚫
+              </div>
+              <div style={{ 
+                fontSize: '1.25rem', 
+                fontWeight: 'bold', 
+                color: '#dc2626',
+                marginBottom: '0.5rem'
+              }}>
+                You must join the game first!
+              </div>
+              <div style={{ 
+                fontSize: '0.95rem', 
+                color: '#1f2937',
+                marginTop: '0.5rem'
+              }}>
+                You don&apos;t have permission to access this game. 
+                Please join the game using your name.
+              </div>
+            </div>
+            <ButtonContainerCenter>
+              <ButtonPrimary onClick={handleJoinRedirect}>
+                Join Game
+              </ButtonPrimary>
+            </ButtonContainerCenter>
+          </FormCard>
+        </PageContainer>
+      </>
+    );
+  }
 
   // Loading state
   if (isLoading) {

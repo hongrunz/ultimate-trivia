@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   PageContainer,
@@ -14,6 +14,7 @@ import {
   ButtonContainer,
 } from './styled/FormComponents';
 import { api, tokenStorage } from '../lib/api';
+import { getSessionMode, getDeviceType } from '../lib/deviceDetection';
 
 const DEFAULT_NUM_QUESTIONS = 10;
 const DEFAULT_TIME_LIMIT = 30;
@@ -26,9 +27,21 @@ export default function CreateGame() {
   const [timeLimit, setTimeLimit] = useState(DEFAULT_TIME_LIMIT);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [sessionMode, setSessionMode] = useState<'player' | 'display'>('player');
+  const [deviceType, setDeviceType] = useState<'mobile' | 'web'>('web');
+
+  // Detect device type on mount
+  useEffect(() => {
+    const mode = getSessionMode();
+    const device = getDeviceType();
+    setSessionMode(mode);
+    setDeviceType(device);
+  }, []);
 
   const handleCreateRoom = async () => {
-    if (!hostName.trim()) {
+    // For display mode (web), host name is optional - it's just a label
+    // For player mode (mobile), host name is required since they'll be playing
+    if (sessionMode === 'player' && !hostName.trim()) {
       setError('Please enter your name');
       return;
     }
@@ -46,10 +59,11 @@ export default function CreateGame() {
       const topics = topic.split(',').map(t => t.trim()).filter(t => t.length > 0);
 
       const response = await api.createRoom({
-        name: hostName.trim(),
+        name: hostName.trim() || 'Host', // Default name for display mode
         topics: topics.length > 0 ? topics : [topic.trim()],
         questionsPerRound: numQuestions,
         timePerQuestion: timeLimit,
+        sessionMode: sessionMode, // Pass session mode to backend
       });
 
       // Store host token
@@ -68,17 +82,41 @@ export default function CreateGame() {
       <FormCard>
         <Title>Ultimate Trivia!</Title>
         
+        {/* Show device mode info */}
+        <div style={{ 
+          textAlign: 'center', 
+          marginBottom: '1rem', 
+          padding: '0.5rem',
+          backgroundColor: deviceType === 'web' ? '#dbeafe' : '#fef3c7',
+          borderRadius: '0.5rem',
+          fontSize: '0.875rem',
+          color: '#1f2937'
+        }}>
+          {deviceType === 'web' ? (
+            <>
+              🖥️ <strong>Big Screen Mode:</strong> This device will display questions and leaderboard. 
+              You&apos;ll need to join as a player on mobile to answer questions.
+            </>
+          ) : (
+            <>
+              📱 <strong>Mobile Mode:</strong> You&apos;ll answer questions from this device.
+            </>
+          )}
+        </div>
+        
         <FormGroup>
-          <FieldContainer>
-            <Label htmlFor="hostName">Your Name:</Label>
-            <Input
-              id="hostName"
-              type="text"
-              value={hostName}
-              onChange={(e) => setHostName(e.target.value)}
-              placeholder="Enter your name"
-            />
-          </FieldContainer>
+          {sessionMode === 'player' && (
+            <FieldContainer>
+              <Label htmlFor="hostName">Your Name:</Label>
+              <Input
+                id="hostName"
+                type="text"
+                value={hostName}
+                onChange={(e) => setHostName(e.target.value)}
+                placeholder="Enter your name"
+              />
+            </FieldContainer>
+          )}
 
           <FieldContainer>
             <Label htmlFor="topic">Topic(s):</Label>
@@ -124,7 +162,7 @@ export default function CreateGame() {
         <ButtonContainer>
           <ButtonPrimary
             onClick={handleCreateRoom}
-            disabled={!hostName.trim() || !topic.trim() || isLoading}
+            disabled={(sessionMode === 'player' && !hostName.trim()) || !topic.trim() || isLoading}
           >
             {isLoading ? 'Creating...' : 'Create Room'}
           </ButtonPrimary>
