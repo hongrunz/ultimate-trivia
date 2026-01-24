@@ -23,6 +23,10 @@ import { api, tokenStorage, RoomResponse } from '../lib/api';
 import { useWebSocket } from '../lib/useWebSocket';
 import { useBackgroundMusic } from '../lib/useBackgroundMusic';
 import MusicControl from './MusicControl';
+import { getSessionMode } from '../lib/deviceDetection';
+import { ErrorText } from './styled/ErrorComponents';
+import { BigScreenNotice, WarningText } from './styled/InfoComponents';
+import { SuccessText, MutedText } from './styled/StatusComponents';
 
 interface StartGameProps {
   roomId: string;
@@ -34,6 +38,13 @@ export default function StartGame({ roomId }: StartGameProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState('');
+  const [sessionMode, setSessionMode] = useState<'player' | 'display'>('player');
+
+  // Detect session mode on mount
+  useEffect(() => {
+    const mode = getSessionMode();
+    setSessionMode(mode);
+  }, []);
 
   // Generate the room URL
   const roomUrl = useMemo(() => {
@@ -83,11 +94,15 @@ export default function StartGame({ roomId }: StartGameProps) {
         break;
       
       case 'game_started':
-        // Game has started, navigate to game page
-        router.push(`/game/${roomId}`);
+        // Game has started, navigate to appropriate page
+        if (sessionMode === 'display') {
+          router.push(`/host/${roomId}/display`);
+        } else {
+          router.push(`/game/${roomId}`);
+        }
         break;
     }
-  }, [roomId, router]);
+  }, [roomId, router, sessionMode]);
 
   useWebSocket(roomId, {
     onMessage: handleWebSocketMessage,
@@ -122,12 +137,18 @@ export default function StartGame({ roomId }: StartGameProps) {
 
     try {
       const response = await api.startGame(roomId, hostToken);
-      // Store the host's player token if provided
+      // Store the host's player token if provided (in player mode)
       if (response.playerToken) {
         tokenStorage.setPlayerToken(roomId, response.playerToken);
       }
-      // Navigate to the game page
-      router.push(`/game/${roomId}`);
+      // Navigate to appropriate page based on session mode
+      if (sessionMode === 'display') {
+        // In display mode, go to big screen display
+        router.push(`/host/${roomId}/display`);
+      } else {
+        // In player mode, go to game page
+        router.push(`/game/${roomId}`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start game. Please try again.');
       setIsStarting(false);
@@ -157,7 +178,7 @@ export default function StartGame({ roomId }: StartGameProps) {
           <FormCard>
             <GameContainer>
               <Title>Error</Title>
-              <div style={{ color: '#dc2626', marginTop: '1rem' }}>{error}</div>
+              <ErrorText>{error}</ErrorText>
             </GameContainer>
           </FormCard>
         </PageContainer>
@@ -177,6 +198,19 @@ export default function StartGame({ roomId }: StartGameProps) {
           <GameContainer>
             <Title>Ultimate Trivia!</Title>
 
+          {/* Big Screen Mode Notice */}
+          {sessionMode === 'display' && (
+            <BigScreenNotice>
+              <strong>🖥️ Big Screen Mode</strong>
+              <br />
+              This screen will display questions and leaderboard.
+              <br />
+              <WarningText>
+                You must join as a player on mobile to answer questions!
+              </WarningText>
+            </BigScreenNotice>
+          )}
+
           {/* QR Code */}
           <QRCodeContainer>
             {roomUrl && <QRCodeSVG value={roomUrl} size={200} />}
@@ -189,11 +223,7 @@ export default function StartGame({ roomId }: StartGameProps) {
             copy URL
           </ButtonPrimary>
 
-          {error && (
-            <div style={{ color: '#dc2626', marginBottom: '1rem', fontSize: '0.875rem' }}>
-              {error}
-            </div>
-          )}
+          {error && <ErrorText style={{ marginBottom: '1rem' }}>{error}</ErrorText>}
 
           {/* Bottom section with players and start button */}
           <BottomSection>
@@ -222,7 +252,7 @@ export default function StartGame({ roomId }: StartGameProps) {
                   );
                 })
               ) : (
-                <div style={{ color: '#6b7280', fontSize: '0.875rem' }}>No players yet</div>
+                <MutedText>No players yet</MutedText>
               )}
               {room.players.length > 5 && <Ellipsis>...</Ellipsis>}
             </PlayerList>
@@ -237,7 +267,7 @@ export default function StartGame({ roomId }: StartGameProps) {
               </ButtonSuccess>
             )}
             {room.status === 'started' && (
-              <div style={{ color: '#16a34a', fontWeight: 600 }}>Game Started</div>
+              <SuccessText>Game Started</SuccessText>
             )}
           </BottomSection>
         </GameContainer>

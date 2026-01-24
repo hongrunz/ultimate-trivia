@@ -21,6 +21,7 @@ class CreateRoomRequest(BaseModel):
     topics: list[str]
     questionsPerRound: int
     timePerQuestion: int
+    sessionMode: Optional[str] = 'player'  # 'player' or 'display'
 
 
 class CreateRoomResponse(BaseModel):
@@ -97,7 +98,10 @@ async def create_room(request: CreateRoomRequest):
         
         room = RoomStore.create_room(room_data)
         
-        PlayerStore.create_player(room.room_id, request.name)
+        # Only create a player for the host if in 'player' mode (mobile)
+        # In 'display' mode (web/big screen), the host is not a player
+        if request.sessionMode == 'player':
+            PlayerStore.create_player(room.room_id, request.name)
         
         return CreateRoomResponse(
             roomId=str(room.room_id),
@@ -224,9 +228,11 @@ async def start_game(room_id: str, hostToken: Optional[str] = Header(None, alias
             raise HTTPException(status_code=400, detail=f"Room is already {room.status}")
         
         # Check if room has players
+        # Note: In display mode, the host is not a player, so we need at least 1 player
+        # In player mode, the host is already a player, so we should have at least 1 player too
         players = PlayerStore.get_players_by_room(room_uuid)
         if not players:
-            raise HTTPException(status_code=400, detail="Cannot start game without players")
+            raise HTTPException(status_code=400, detail="Cannot start game without players. Please wait for players to join.")
         
         # Generate questions
         sample_questions = generate_questions_with_llm(room.topics, room.questions_per_round)
@@ -252,7 +258,8 @@ async def start_game(room_id: str, hostToken: Optional[str] = Header(None, alias
         started_at = datetime.now(timezone.utc)
         RoomStore.update_room_status(room_uuid, "started", started_at)
         
-        # Find the host's player record to get their player token
+        # Find the host's player record to get their player token (for mobile mode)
+        # In display mode, host is not a player, so host_player will be None
         host_player = None
         for player in players:
             if player.player_name == room.host_name:

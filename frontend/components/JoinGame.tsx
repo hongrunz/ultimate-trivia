@@ -13,6 +13,7 @@ import {
   ButtonLarge,
   ButtonContainerCenter,
 } from './styled/FormComponents';
+import { ErrorText } from './styled/ErrorComponents';
 import { api, tokenStorage } from '../lib/api';
 
 export default function JoinGame() {
@@ -74,17 +75,9 @@ export default function JoinGame() {
           </FieldContainer>
         </FormGroup>
 
-        {error && (
-          <div style={{ color: '#dc2626', marginTop: '1rem', fontSize: '0.875rem', textAlign: 'center' }}>
-            {error}
-          </div>
-        )}
+        {error && <ErrorText>{error}</ErrorText>}
 
-        {!roomId && (
-          <div style={{ color: '#dc2626', marginTop: '1rem', fontSize: '0.875rem', textAlign: 'center' }}>
-            No room ID provided. Please use a valid room link.
-          </div>
-        )}
+        {!roomId && <ErrorText>No room ID provided. Please use a valid room link.</ErrorText>}
 
         <ButtonContainerCenter>
           <ButtonLarge
