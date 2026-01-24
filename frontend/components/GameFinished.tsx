@@ -9,6 +9,7 @@ import {
   LeaderboardHeading,
   LeaderboardList,
   LeaderboardItem,
+  TopicBadge,
 } from './styled/GameComponents';
 import { ButtonLarge, ButtonContainerCenter } from './styled/FormComponents';
 
@@ -17,6 +18,7 @@ interface LeaderboardEntry {
   rank: number;
   playerName: string;
   points: number;
+  topicScore?: { [topic: string]: number };
 }
 
 interface GameFinishedProps {
@@ -43,7 +45,18 @@ export default function GameFinished({
           <LeaderboardList>
             {leaderboard.map((entry) => (
               <LeaderboardItem key={entry.playerId}>
-                No{entry.rank} {entry.playerName} ... {entry.points} pts,
+                <div>
+                  No{entry.rank} {entry.playerName} ... {entry.points} pts
+                </div>
+                {entry.topicScore && Object.keys(entry.topicScore).length > 0 && (
+                  <div style={{ marginTop: '0.25rem', display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                    {Object.entries(entry.topicScore).map(([topic, score]) => (
+                      <TopicBadge key={topic} style={{ fontSize: '0.65rem', padding: '0.15rem 0.5rem' }}>
+                        {topic}: {score}
+                      </TopicBadge>
+                    ))}
+                  </div>
+                )}
               </LeaderboardItem>
             ))}
           </LeaderboardList>

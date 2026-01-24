@@ -52,6 +52,11 @@ def _player_token_key(player_token: str) -> str:
     return f"player_token:{player_token}"
 
 
+def _room_topics_key(room_id: UUID) -> str:
+    """Get Redis key for room topics set"""
+    return f"room:{room_id}:topics"
+
+
 class RoomStore:
     """Store for room operations"""
 
@@ -175,6 +180,7 @@ class PlayerStore:
             "player_name": player_name,
             "player_token": player_token,
             "score": "0",
+            "topic_score": json.dumps({}),
             "joined_at": now.isoformat(),
         }
         
@@ -193,6 +199,7 @@ class PlayerStore:
         
         # Create Player object
         player_dict["score"] = 0
+        player_dict["topic_score"] = {}
         return Player(**player_dict)
 
     @staticmethod
@@ -216,6 +223,7 @@ class PlayerStore:
                 player_data["player_id"] = UUID(player_data["player_id"])
                 player_data["room_id"] = UUID(player_data["room_id"])
                 player_data["score"] = int(player_data.get("score", "0"))
+                player_data["topic_score"] = json.loads(player_data.get("topic_score", "{}"))
                 player_data["joined_at"] = datetime.fromisoformat(player_data["joined_at"])
                 players.append(Player(**player_data))
         
@@ -242,13 +250,14 @@ class PlayerStore:
         player_data["player_id"] = UUID(player_data["player_id"])
         player_data["room_id"] = UUID(player_data["room_id"])
         player_data["score"] = int(player_data.get("score", "0"))
+        player_data["topic_score"] = json.loads(player_data.get("topic_score", "{}"))
         player_data["joined_at"] = datetime.fromisoformat(player_data["joined_at"])
         
         return Player(**player_data)
     
     @staticmethod
-    def update_player_score(player_id: UUID, points: int) -> Player:
-        """Update player score by adding points"""
+    def update_player_score(player_id: UUID, points: int, topics: List[str] = None) -> Player:
+        """Update player score by adding points and update topic_score"""
         r = get_redis_client()
         
         player_key = _player_key(player_id)
@@ -264,6 +273,13 @@ class PlayerStore:
         # Update score in hash
         r.hset(player_key, "score", str(new_score))
         
+        # Update topic_score if topics provided and points > 0
+        topic_score = json.loads(player_data.get("topic_score", "{}"))
+        if topics and points > 0:
+            for topic in topics:
+                topic_score[topic] = topic_score.get(topic, 0) + points
+            r.hset(player_key, "topic_score", json.dumps(topic_score))
+        
         # Update score in sorted set for leaderboard
         room_id = UUID(player_data["room_id"])
         r.zadd(_room_scores_key(room_id), {str(player_id): new_score})
@@ -272,6 +288,7 @@ class PlayerStore:
         player_data["player_id"] = UUID(player_data["player_id"])
         player_data["room_id"] = UUID(player_data["room_id"])
         player_data["score"] = new_score
+        player_data["topic_score"] = topic_score
         player_data["joined_at"] = datetime.fromisoformat(player_data["joined_at"])
         
         return Player(**player_data)
@@ -290,6 +307,7 @@ class PlayerStore:
         player_data["player_id"] = UUID(player_data["player_id"])
         player_data["room_id"] = UUID(player_data["room_id"])
         player_data["score"] = int(player_data.get("score", "0"))
+        player_data["topic_score"] = json.loads(player_data.get("topic_score", "{}"))
         player_data["joined_at"] = datetime.fromisoformat(player_data["joined_at"])
         
         return Player(**player_data)
@@ -312,6 +330,41 @@ class PlayerStore:
         return players
 
 
+class TopicStore:
+    """Store for topic operations"""
+
+    @staticmethod
+    def add_topic(room_id: UUID, player_id: UUID, topic: str) -> None:
+        """Add a topic submitted by a player"""
+        r = get_redis_client()
+        
+        # Check if room exists
+        if not r.exists(_room_key(room_id)):
+            raise ValueError("Room not found")
+        
+        # Store topic in Redis set (automatically handles duplicates)
+        topics_key = _room_topics_key(room_id)
+        r.sadd(topics_key, topic.strip())
+    
+    @staticmethod
+    def get_topics(room_id: UUID) -> List[str]:
+        """Get all topics submitted for a room"""
+        r = get_redis_client()
+        
+        topics_key = _room_topics_key(room_id)
+        topics = r.smembers(topics_key)
+        
+        return sorted([topic for topic in topics if topic])
+    
+    @staticmethod
+    def clear_topics(room_id: UUID) -> None:
+        """Clear all topics for a room"""
+        r = get_redis_client()
+        
+        topics_key = _room_topics_key(room_id)
+        r.delete(topics_key)
+
+
 class QuestionStore:
     """Store for question operations"""
 
@@ -330,6 +383,7 @@ class QuestionStore:
                 "question_id": str(question_id),
                 "room_id": str(q.room_id),
                 "question_text": q.question_text,
+                "topics": json.dumps(q.topics),
                 "options": json.dumps(q.options),
                 "correct_answer": str(q.correct_answer),
                 "explanation": q.explanation or "",
@@ -342,6 +396,7 @@ class QuestionStore:
             r.rpush(questions_key, json.dumps(question_dict))
             
             # Create Question object
+            question_dict["topics"] = q.topics
             question_dict["options"] = q.options
             question_dict["correct_answer"] = q.correct_answer
             question_dict["question_index"] = q.question_index
@@ -368,6 +423,7 @@ class QuestionStore:
             q_data = json.loads(q_str)
             q_data["question_id"] = UUID(q_data["question_id"])
             q_data["room_id"] = UUID(q_data["room_id"])
+            q_data["topics"] = json.loads(q_data.get("topics", "[]"))
             q_data["options"] = json.loads(q_data["options"])
             q_data["correct_answer"] = int(q_data["correct_answer"])
             q_data["question_index"] = int(q_data["question_index"])

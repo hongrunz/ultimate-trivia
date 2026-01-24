@@ -19,6 +19,7 @@ export interface CreateRoomResponse {
 
 export interface JoinRoomRequest {
   playerName: string;
+  topic: string;  // Required field
 }
 
 export interface JoinRoomResponse {
@@ -30,12 +31,14 @@ export interface Player {
   playerId: string;
   playerName: string;
   score?: number;
+  topicScore?: { [topic: string]: number };  // Points per topic
   joinedAt: string;
 }
 
 export interface Question {
   id: string;
   question: string;
+  topics: string[];  // Topics associated with this question
   options: string[];
   correctAnswer: number;
   explanation?: string;
@@ -45,6 +48,7 @@ export interface RoomResponse {
   roomId: string;
   name: string;
   topics: string[];
+  collectedTopics: string[];  // Topics submitted by players
   questionsPerRound: number;
   timePerQuestion: number;
   hostName: string;
@@ -65,6 +69,7 @@ export interface StartGameResponse {
 export interface LeaderboardEntry {
   playerId: string;
   score: number;
+  topicScore: { [topic: string]: number };  // Points per topic
 }
 
 export interface LeaderboardResponse {
@@ -127,10 +132,10 @@ export const api = {
   /**
    * Join an existing room
    */
-  async joinRoom(roomId: string, playerName: string): Promise<JoinRoomResponse> {
+  async joinRoom(roomId: string, playerName: string, topic: string): Promise<JoinRoomResponse> {
     return fetchAPI<JoinRoomResponse>(`/api/rooms/${roomId}/join`, {
       method: 'POST',
-      body: JSON.stringify({ playerName }),
+      body: JSON.stringify({ playerName, topic }),
     });
   },
 
