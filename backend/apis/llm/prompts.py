@@ -40,7 +40,7 @@ def generate_questions_with_llm(topics: List[str], count: int) -> List[Dict[str,
 
 Return ONLY a valid JSON array of objects. Each object MUST have:
 - "question": string
-- "topics": array of strings
+- "topics": array of strings, subset of topics_str, maximum 2 topics
 - "options": array of exactly 4 strings
 - "correct_answer": integer index 0-3 (0 means first option)
 - "explanation": string
