@@ -13,6 +13,7 @@ import {
 import { ButtonLarge, ButtonContainerCenter } from './styled/FormComponents';
 
 interface LeaderboardEntry {
+  playerId: string;
   rank: number;
   playerName: string;
   points: number;
@@ -41,7 +42,7 @@ export default function GameFinished({
           <LeaderboardHeading>Leader board:</LeaderboardHeading>
           <LeaderboardList>
             {leaderboard.map((entry) => (
-              <LeaderboardItem key={entry.rank}>
+              <LeaderboardItem key={entry.playerId}>
                 No{entry.rank} {entry.playerName} ... {entry.points} pts,
               </LeaderboardItem>
             ))}

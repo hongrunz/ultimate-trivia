@@ -89,7 +89,7 @@ export default function CreateGame() {
           {deviceType === 'web' ? (
             <>
               🖥️ <strong>Big Screen Mode:</strong> This device will display questions and leaderboard. 
-              You&apos;ll need to join as a player on mobile to answer questions.
+              You&apos;ll need to join as a player on another device to answer questions.
             </>
           ) : (
             <>

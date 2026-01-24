@@ -16,6 +16,7 @@ import {
 } from './styled/GameComponents';
 
 interface LeaderboardEntry {
+  playerId: string;
   rank: number;
   playerName: string;
   points: number;
@@ -61,7 +62,7 @@ export default function SubmittedScreen({
           <LeaderboardHeading>Leader board:</LeaderboardHeading>
           <LeaderboardList>
             {leaderboard.map((entry) => (
-              <LeaderboardItem key={entry.rank}>
+              <LeaderboardItem key={entry.playerId}>
                 No{entry.rank} {entry.playerName} ... {entry.points} pts,
               </LeaderboardItem>
             ))}

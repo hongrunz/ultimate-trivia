@@ -23,6 +23,7 @@ interface PlayerGameProps {
 }
 
 interface LeaderboardEntry {
+  playerId: string;
   rank: number;
   playerName: string;
   points: number;
@@ -55,11 +56,21 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
       players.map(p => [p.playerId, p.playerName])
     );
     
-    return leaderboardData.leaderboard.map((entry, index) => ({
-      rank: index + 1,
-      playerName: playerMap.get(entry.playerId) || `Player ${entry.playerId.slice(0, 8)}`,
-      points: entry.score,
-    }));
+    // Calculate ranks with proper tie handling
+    let currentRank = 1;
+    return leaderboardData.leaderboard.map((entry, index) => {
+      // If this player has a different score than the previous one, update rank
+      if (index > 0 && entry.score !== leaderboardData.leaderboard[index - 1].score) {
+        currentRank = index + 1;
+      }
+      
+      return {
+        playerId: entry.playerId,
+        rank: currentRank,
+        playerName: playerMap.get(entry.playerId) || `Player ${entry.playerId.slice(0, 8)}`,
+        points: entry.score,
+      };
+    });
   }, []);
 
   const fetchLeaderboard = useCallback(async () => {

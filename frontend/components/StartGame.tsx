@@ -206,7 +206,7 @@ export default function StartGame({ roomId }: StartGameProps) {
               This screen will display questions and leaderboard.
               <br />
               <WarningText>
-                You must join as a player on mobile to answer questions!
+                You must join as a player on another device to answer questions!
               </WarningText>
             </BigScreenNotice>
           )}
