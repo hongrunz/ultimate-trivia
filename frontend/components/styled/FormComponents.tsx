@@ -1,29 +1,33 @@
 import styled from 'styled-components';
 import Link from 'next/link';
+import { colors, typography } from './theme';
 
 export const PageContainer = styled.div`
   min-height: 100vh;
-  background-color: #d1d5db; /* lighter gray background */
+  background-color: ${colors.primary};
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 1rem;
+  width: 100%;
 `;
 
 export const FormCard = styled.div`
-  background-color: #e5e7eb; /* light gray */
-  border: 2px solid #000000; /* black border */
-  border-radius: 0;
+  background-color: ${colors.surface};
+  
+  border-radius: 40px;
   padding: 2rem;
   width: 100%;
   max-width: 28rem; /* max-w-md */
 `;
 
 export const Title = styled.h1`
-  font-size: 1.875rem; /* text-3xl */
-  font-weight: 700;
-  color: #000000; /* black */
+  font-family: ${typography.presets.h1.fontFamily};
+  font-size: ${typography.presets.h1.fontSize};
+  font-weight: ${typography.presets.h1.fontWeight};
+  line-height: ${typography.presets.h1.lineHeight};
+  color: ${colors.typeMain};
   text-align: center;
   margin-bottom: 2rem;
 `;
@@ -42,33 +46,45 @@ export const FieldContainer = styled.div`
 export const Label = styled.label`
   display: block;
   margin-bottom: 0.5rem;
-  color: #1f2937; /* gray-800 */
+  font-family: ${typography.presets.label.fontFamily};
+  font-size: ${typography.presets.label.fontSize};
+  font-weight: ${typography.presets.label.fontWeight};
+  line-height: ${typography.presets.label.lineHeight};
+  color: ${colors.typeMain};
 `;
 
 export const Input = styled.input`
+  align-items: center;
+  justify-content: center;
   width: 100%;
   padding: 0.5rem;
   text-align: left;
   margin-bottom: 1rem;
-  border: 1px solid #9ca3af; /* border-gray-400 */
-  border-radius: 0.25rem;
-  background-color: #ffffff;
-  color: #111827; /* gray-900 */
-  font-size: 1rem;
+  border: 1px solid ${colors.border};
+  border-radius: 8px;
+  background-color: ${colors.surface};
+  color: ${colors.typeMain};
+  font-family: ${typography.presets.input.fontFamily};
+  font-size: ${typography.presets.input.fontSize};
+  font-weight: ${typography.presets.input.fontWeight};
+  line-height: ${typography.presets.input.lineHeight};
+  box-sizing: border-box;
 
   &:focus {
     outline: none;
-    border-color: #3b82f6; /* blue-500 */
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    border: 1px solid ${colors.border};
+    outline: 1px solid ${colors.border};
+    outline-offset: 0;
+    box-shadow: 0 0 5px 5px ${colors.surfaceSecondary};
   }
 
   &::placeholder {
-    color: #9ca3af;
+    color: ${colors.border};
   }
 
   &[readonly] {
     cursor: default;
-    background-color: #f3f4f6; /* gray-100 */
+    background-color: ${colors.surfaceSecondary};
   }
 `;
 
@@ -77,11 +93,14 @@ export const Select = styled.select`
   padding: 0.5rem;
   text-align: left;
   margin-bottom: 1rem;
-  border: 1px solid #9ca3af; /* border-gray-400 */
+  border: 1px solid ${colors.border};
   border-radius: 0.25rem;
-  background-color: #ffffff;
-  color: #111827; /* gray-900 */
-  font-size: 1rem;
+  background-color: ${colors.surface};
+  color: ${colors.typeMain};
+  font-family: ${typography.presets.input.fontFamily};
+  font-size: ${typography.presets.input.fontSize};
+  font-weight: ${typography.presets.input.fontWeight};
+  line-height: ${typography.presets.input.lineHeight};
   cursor: pointer;
   appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23333' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
@@ -91,49 +110,53 @@ export const Select = styled.select`
 
   &:focus {
     outline: none;
-    border-color: #3b82f6; /* blue-500 */
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    border-color: ${colors.accent};
+    box-shadow: 0 0 0 3px ${colors.surfaceSecondary};
   }
 `;
 
 export const Button = styled.button`
-  padding: 0.75rem 1.5rem;
-  background-color: #2563eb; /* blue-600 */
-  color: white;
+  padding: 0.5rem 1.5rem;
+  background-color: ${colors.accent};
+  color: ${colors.typeMain};
   border: none;
-  border-radius: 0.25rem;
-  font-weight: 500;
+  border-radius: 8px;
+  font-family: ${typography.presets.button.fontFamily};
+  font-size: ${typography.presets.button.fontSize};
+  font-weight: ${typography.presets.button.fontWeight};
+  line-height: ${typography.presets.button.lineHeight};
   cursor: pointer;
   transition: background-color 0.2s;
 
   &:hover:not(:disabled) {
-    background-color: #1d4ed8; /* blue-700 */
+    background-color: ${colors.typeAccent};
   }
 
   &:disabled {
-    background-color: #9ca3af; /* gray-400 */
+    background-color: ${colors.typeSecondary};
     cursor: not-allowed;
   }
 `;
 
 export const ButtonLarge = styled(Button)`
   padding: 0.75rem 2rem;
-  font-weight: 600;
+  font-weight: ${typography.presets.buttonLarge.fontWeight};
 `;
 
 export const ButtonPrimary = styled(Button)`
-  background-color: #e5e7eb; /* gray */
-  color: #000000; /* black text */
-  border: 2px solid #000000; /* black border */
+  background-color: ${colors.accent};
+  color: ${colors.typeMain};
+  
   
   &:hover:not(:disabled) {
-    background-color: #d1d5db; /* slightly darker gray */
+    background-color: ${colors.typeAccent};
+    color: ${colors.typeMain};
   }
   
   &:disabled {
-    background-color: #e5e7eb;
-    color: #9ca3af;
-    border-color: #9ca3af;
+    background-color: ${colors.typeSecondary};
+    color: ${colors.typeMain};
+    
   }
 `;
 
@@ -141,7 +164,7 @@ export const ButtonSuccess = styled(Button)`
   background-color: #16a34a; /* green-600 */
   
   &:hover:not(:disabled) {
-    background-color: #15803d; /* green-700 */
+    background-color:  #16a34a;
   }
 `;
 
@@ -159,9 +182,12 @@ export const ButtonContainerCenter = styled.div`
 `;
 
 export const LinkText = styled.span`
-  color: #2563eb; /* blue */
+  color: ${colors.typeAccent};
   text-decoration: none;
-  font-size: 0.875rem;
+  font-family: ${typography.presets.link.fontFamily};
+  font-size: ${typography.presets.link.fontSize};
+  font-weight: ${typography.presets.link.fontWeight};
+  line-height: ${typography.presets.link.lineHeight};
   cursor: pointer;
   text-align: center;
   display: block;
@@ -173,9 +199,12 @@ export const LinkText = styled.span`
 `;
 
 export const StyledLink = styled(Link)`
-  color: #2563eb; /* blue */
+  color: ${colors.accent};
   text-decoration: none;
-  font-size: 0.875rem;
+  font-family: ${typography.presets.link.fontFamily};
+  font-size: ${typography.presets.link.fontSize};
+  font-weight: ${typography.presets.link.fontWeight};
+  line-height: ${typography.presets.link.lineHeight};
   cursor: pointer;
   text-align: center;
   display: block;
@@ -187,11 +216,17 @@ export const StyledLink = styled(Link)`
 `;
 
 export const HelperText = styled.span`
-  color: #4b5563; /* gray-600 */
-  font-size: 0.875rem; /* text-sm */
+  color: ${colors.bgContrast};
+  font-family: ${typography.presets.bodySmall.fontFamily};
+  font-size: ${typography.presets.bodySmall.fontSize};
+  font-weight: ${typography.presets.bodySmall.fontWeight};
+  line-height: ${typography.presets.bodySmall.lineHeight};
 `;
 
 export const Text = styled.p`
-  color: #4b5563; /* gray-600 */
-  font-size: 0.875rem; /* text-sm */
+  color: ${colors.bgContrast};
+  font-family: ${typography.presets.bodySmall.fontFamily};
+  font-size: ${typography.presets.bodySmall.fontSize};
+  font-weight: ${typography.presets.bodySmall.fontWeight};
+  line-height: ${typography.presets.bodySmall.lineHeight};
 `;

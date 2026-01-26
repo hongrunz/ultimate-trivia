@@ -10,6 +10,7 @@ import {
   LeaderboardList,
   LeaderboardItem,
   TopicBadge,
+  GameTitleImage,
 } from './styled/GameComponents';
 import { ButtonLarge, ButtonContainerCenter } from './styled/FormComponents';
 
@@ -38,6 +39,7 @@ export default function GameFinished({
 
   return (
     <GameScreenContainer>
+      <GameTitleImage src="/assets/game_title.svg" alt="Ultimate Trivia" />
       <GameCard>
         <GameTitle>Game Finished! 🎉</GameTitle>
         <LeaderboardSection>

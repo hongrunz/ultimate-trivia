@@ -15,6 +15,7 @@ import {
 } from './styled/FormComponents';
 import { ErrorText } from './styled/ErrorComponents';
 import { InfoBox } from './styled/InfoComponents';
+import { GameTitleImage } from './styled/GameComponents';
 import { api, tokenStorage } from '../lib/api';
 import { getSessionMode, getDeviceType } from '../lib/deviceDetection';
 
@@ -72,6 +73,7 @@ export default function CreateGame() {
 
   return (
     <PageContainer>
+      <GameTitleImage src="/assets/game_title.svg" alt="Ultimate Trivia" />
       <FormCard>
         <Title>Ultimate Trivia!</Title>
         

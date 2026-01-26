@@ -13,6 +13,7 @@ import {
   LeaderboardHeading,
   LeaderboardList,
   LeaderboardItem,
+  GameTitleImage,
 } from './styled/GameComponents';
 
 interface LeaderboardEntry {
@@ -43,6 +44,7 @@ export default function SubmittedScreen({
 }: SubmittedScreenProps) {
   return (
     <GameScreenContainer>
+      <GameTitleImage src="/assets/game_title.svg" alt="Ultimate Trivia" />
       <GameCard>
         <GameHeader>
           <CircularBadge>{currentQuestion}/{totalQuestions}</CircularBadge>

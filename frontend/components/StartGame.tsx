@@ -21,6 +21,14 @@ import {
   TopicsSection,
   TopicsContainer,
   TopicBadge,
+  CardsContainer,
+  PlayerListCard,
+  PlayerListTitle,
+  PlayerListItem,
+  PlayerListItemAvatar,
+  PlayerListItemName,
+  PlayerListContainer,
+  GameTitleImage,
 } from './styled/GameComponents';
 import { api, tokenStorage, RoomResponse } from '../lib/api';
 import { useWebSocket } from '../lib/useWebSocket';
@@ -186,101 +194,101 @@ export default function StartGame({ roomId }: StartGameProps) {
     <>
       <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
       <PageContainer>
-        <FormCard>
-          <GameContainer>
-            <Title>Ultimate Trivia!</Title>
-
-          {/* Big Screen Mode Notice */}
-          {sessionMode === 'display' && (
-            <BigScreenNotice>
-              <strong>🖥️ Big Screen Mode</strong>
-              <br />
-              This screen will display questions and leaderboard.
-              <br />
-              <WarningText>
-                You must join as a player on another device to answer questions!
-              </WarningText>
-            </BigScreenNotice>
-          )}
-
-          {/* QR Code */}
-          <QRCodeContainer>
-            {roomUrl && <QRCodeSVG value={roomUrl} size={200} />}
-          </QRCodeContainer>
-
-          <Input value={roomUrl} readOnly />
-
-          {/* Copy URL Button */}
-          <ButtonPrimary onClick={handleCopyUrl} style={{ marginBottom: '2rem' }}>
-            copy URL
-          </ButtonPrimary>
-
-          {/* Display collected topics */}
-          {room.collectedTopics && room.collectedTopics.length > 0 && (
-            <TopicsSection>
-              <MutedText style={{ marginBottom: '0.5rem' }}>
-                Topics submitted ({room.collectedTopics.length}):
-              </MutedText>
-              <TopicsContainer>
-                {room.collectedTopics.map((topic, index) => (
-                  <TopicBadge key={index}>
-                    {topic}
-                  </TopicBadge>
-                ))}
-              </TopicsContainer>
-            </TopicsSection>
-          )}
-
-          {error && <ErrorText style={{ marginBottom: '1rem' }}>{error}</ErrorText>}
-
-          {/* Bottom section with players and start button */}
-          <BottomSection>
-            {/* Players list */}
-            <PlayerList>
+        <GameTitleImage src="/assets/game_title.svg" alt="Ultimate Trivia" />
+        <CardsContainer>
+          {/* Player List Card */}
+          <PlayerListCard>
+            <PlayerListTitle>Players</PlayerListTitle>
+            <PlayerListContainer>
               {room.players.length > 0 ? (
                 room.players.map((player) => {
-                  // Generate a consistent color based on player ID
-                  const colors = [
-                    '#3b82f6', // blue-500
-                    '#ef4444', // red-500
-                    '#10b981', // green-500
-                    '#f59e0b', // amber-500
-                    '#8b5cf6', // violet-500
-                    '#ec4899', // pink-500
-                    '#14b8a6', // teal-500
-                    '#f97316', // orange-500
-                  ];
-                  const colorIndex = player.playerId.charCodeAt(0) % colors.length;
-                  const bgColor = colors[colorIndex];
+                  // Generate a consistent avatar based on player ID
+                  // There are 10 avatars (avatar_1.svg through avatar_10.svg)
+                  const avatarCount = 10;
+                  const avatarIndex = (player.playerId.charCodeAt(0) % avatarCount) + 1;
+                  const avatarSrc = `/assets/avatars/avatar_${avatarIndex}.svg`;
                   
                   return (
-                    <PlayerAvatar key={player.playerId} $bgColor={bgColor}>
-                      {player.playerName.charAt(0).toUpperCase()}
-                    </PlayerAvatar>
+                    <PlayerListItem key={player.playerId}>
+                      <PlayerListItemAvatar $avatarSrc={avatarSrc}>
+                        {player.playerName.charAt(0).toUpperCase()}
+                      </PlayerListItemAvatar>
+                      <PlayerListItemName>{player.playerName}</PlayerListItemName>
+                    </PlayerListItem>
                   );
                 })
               ) : (
-                <MutedText>No players yet</MutedText>
+                <MutedText style={{ textAlign: 'center', padding: '2rem 0' }}>
+                  No players yet
+                </MutedText>
               )}
-              {room.players.length > 5 && <Ellipsis>...</Ellipsis>}
-            </PlayerList>
+            </PlayerListContainer>
+          </PlayerListCard>
 
-            {/* Start button - only show if game hasn't started */}
-            {room.status === 'waiting' && (
-              <ButtonSuccess 
-                onClick={handleStart}
-                disabled={isStarting || room.players.length === 0}
-              >
-                {isStarting ? 'Starting...' : 'start'}
-              </ButtonSuccess>
-            )}
-            {room.status === 'started' && (
-              <SuccessText>Game Started</SuccessText>
-            )}
-          </BottomSection>
-        </GameContainer>
-      </FormCard>
-    </PageContainer>
+          {/* Main Game Card */}
+          <FormCard>
+            <GameContainer>
+              <Title>Ultimate Trivia!</Title>
+
+              {/* Big Screen Mode Notice */}
+              {sessionMode === 'display' && (
+                <BigScreenNotice>
+                  <strong>🖥️ Big Screen Mode</strong>
+                  <br />
+                  This screen will display questions and leaderboard.
+                  <br />
+                  <WarningText>
+                    You must join as a player on another device to answer questions!
+                  </WarningText>
+                </BigScreenNotice>
+              )}
+
+              {/* QR Code */}
+              <QRCodeContainer>
+                {roomUrl && <QRCodeSVG value={roomUrl} size={200} />}
+              </QRCodeContainer>
+
+              <Input value={roomUrl} readOnly />
+
+              {/* Copy URL Button */}
+              <ButtonPrimary onClick={handleCopyUrl} style={{ marginBottom: '2rem' }}>
+                Copy URL
+              </ButtonPrimary>
+
+              {/* Display collected topics */}
+              {room.collectedTopics && room.collectedTopics.length > 0 && (
+                <TopicsSection>
+                  <MutedText style={{ marginBottom: '0.5rem' }}>
+                    Topics submitted ({room.collectedTopics.length}):
+                  </MutedText>
+                  <TopicsContainer>
+                    {room.collectedTopics.map((topic, index) => (
+                      <TopicBadge key={index}>
+                        {topic}
+                      </TopicBadge>
+                    ))}
+                  </TopicsContainer>
+                </TopicsSection>
+              )}
+
+              {error && <ErrorText style={{ marginBottom: '1rem' }}>{error}</ErrorText>}
+
+              {/* Start button - only show if game hasn't started */}
+              {room.status === 'waiting' && (
+                <ButtonSuccess 
+                  onClick={handleStart}
+                  disabled={isStarting || room.players.length === 0}
+                >
+                  {isStarting ? 'Starting...' : 'Start'}
+                </ButtonSuccess>
+              )}
+              {room.status === 'started' && (
+                <SuccessText>Game Started</SuccessText>
+              )}
+            </GameContainer>
+          </FormCard>
+        </CardsContainer>
+      </PageContainer>
     </>
   );
 }

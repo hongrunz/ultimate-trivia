@@ -14,6 +14,7 @@ import {
   ButtonContainerCenter,
 } from './styled/FormComponents';
 import { ErrorText } from './styled/ErrorComponents';
+import { GameTitleImage } from './styled/GameComponents';
 import { api, tokenStorage } from '../lib/api';
 
 export default function JoinGame() {
@@ -60,6 +61,7 @@ export default function JoinGame() {
 
   return (
     <PageContainer>
+      <GameTitleImage src="/assets/game_title.svg" alt="Ultimate Trivia" />
       <FormCard>
         <Title>Ultimate Trivia!</Title>
         
