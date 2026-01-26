@@ -63,7 +63,7 @@ export default function JoinGame() {
     <PageContainer>
       <GameTitleImage src="/assets/game_title.svg" alt="Ultimate Trivia" />
       <FormCard>
-        <Title>Ultimate Trivia!</Title>
+        <Title>Wildcard Trivia!</Title>
         
         <FormGroup>
           <FieldContainer>

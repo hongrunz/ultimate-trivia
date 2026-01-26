@@ -228,7 +228,7 @@ export default function StartGame({ roomId }: StartGameProps) {
           {/* Main Game Card */}
           <FormCard>
             <GameContainer>
-              <Title>Ultimate Trivia!</Title>
+              <Title>Wildcard Trivia!</Title>
 
               {/* Big Screen Mode Notice */}
               {sessionMode === 'display' && (

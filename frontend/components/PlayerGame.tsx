@@ -66,10 +66,16 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
         currentRank = index + 1;
       }
       
+      const playerName = playerMap.get(entry.playerId);
+      if (!playerName) {
+        console.warn(`Player name not found for ID: ${entry.playerId}`);
+        console.warn('Available players:', players.map(p => ({ id: p.playerId, name: p.playerName })));
+      }
+      
       return {
         playerId: entry.playerId,
         rank: currentRank,
-        playerName: playerMap.get(entry.playerId) || `Player ${entry.playerId.slice(0, 8)}`,
+        playerName: playerName || `Player ${entry.playerId.slice(0, 8)}`,
         points: entry.score,
         topicScore: entry.topicScore,
       };
@@ -80,19 +86,16 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
     try {
       const leaderboardData = await api.getLeaderboard(roomId);
       
-      // Use current room data or fetch if not available
-      let currentRoom = room;
-      if (!currentRoom) {
-        currentRoom = await api.getRoom(roomId);
-        setRoom(currentRoom);
-      }
+      // Always fetch fresh room data to ensure player names are up to date
+      const currentRoom = await api.getRoom(roomId);
+      setRoom(currentRoom);
       
       const formattedLeaderboard = mapLeaderboardData(leaderboardData, currentRoom.players);
       setLeaderboard(formattedLeaderboard);
     } catch {
       setLeaderboard([]);
     }
-  }, [roomId, room, mapLeaderboardData]);
+  }, [roomId, mapLeaderboardData]);
 
   const fetchRoom = useCallback(async () => {
     try {
