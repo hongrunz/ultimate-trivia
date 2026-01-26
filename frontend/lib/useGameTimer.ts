@@ -6,9 +6,10 @@ import { RoomResponse } from './api';
 interface UseGameTimerOptions {
   room: RoomResponse | null;
   gameStartedAt: Date | null;
-  gameState: 'question' | 'waiting' | 'submitted' | 'round_finished' | 'finished';
+  gameState: 'question' | 'waiting' | 'submitted' | 'round_finished' | 'new_round' | 'finished';
   onGameFinished: () => void;
   onRoundFinished?: () => void;  // Called when a round completes (but more rounds remain)
+  onRoundBreakComplete?: () => void;  // Called when round break timer completes
   onTimerExpired: () => void;
   onQuestionChanged: () => void;
 }
@@ -22,11 +23,13 @@ export function useGameTimer({
   gameState,
   onGameFinished,
   onRoundFinished,
+  onRoundBreakComplete,
   onTimerExpired,
   onQuestionChanged,
 }: UseGameTimerOptions) {
   const [timer, setTimer] = useState<number | undefined>(undefined);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [roundBreakStartTime, setRoundBreakStartTime] = useState<number>(0); // timestamp in ms
 
   // Game timer synchronized with server timestamp
   useEffect(() => {
@@ -135,6 +138,42 @@ export function useGameTimer({
       // automatically by the main timer logic when calculatedQuestionIndex changes
     }
   }, [timer, gameState, onTimerExpired]);
+
+  // Round break countdown timer
+  useEffect(() => {
+    if (gameState !== 'round_finished') return;
+
+    const updateRoundBreakTimer = () => {
+      // Initialize start time on first run
+      if (roundBreakStartTime === 0) {
+        const startTime = Date.now();
+        setRoundBreakStartTime(startTime);
+        setTimer(ROUND_BREAK_TIME_SECONDS);
+        return;
+      }
+
+      const now = Date.now();
+      const elapsed = Math.floor((now - roundBreakStartTime) / 1000);
+      const remaining = Math.max(0, ROUND_BREAK_TIME_SECONDS - elapsed);
+      
+      setTimer(remaining);
+      
+      if (remaining === 0 && onRoundBreakComplete) {
+        setRoundBreakStartTime(0); // Reset for next round break
+        onRoundBreakComplete();
+      }
+    };
+
+    updateRoundBreakTimer();
+    const interval = setInterval(updateRoundBreakTimer, 100);
+    return () => {
+      clearInterval(interval);
+      // Reset on cleanup when leaving round_finished state
+      if (gameState !== 'round_finished') {
+        setRoundBreakStartTime(0);
+      }
+    };
+  }, [gameState, roundBreakStartTime, onRoundBreakComplete]);
 
   return {
     timer,

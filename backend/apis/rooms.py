@@ -451,3 +451,124 @@ async def get_leaderboard(room_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class SubmitTopicRequest(BaseModel):
+    topic: str
+
+
+class SubmitTopicResponse(BaseModel):
+    success: bool
+    submittedCount: int
+    totalPlayers: int
+
+
+@router.post("/{room_id}/submit-topic", response_model=SubmitTopicResponse)
+async def submit_topic(
+    room_id: str,
+    request: SubmitTopicRequest,
+    playerToken: Optional[str] = Header(None, alias="playertoken")
+):
+    """Submit a topic for the next round"""
+    try:
+        if not playerToken:
+            raise HTTPException(status_code=401, detail="Player token required")
+        
+        room_uuid = UUID(room_id)
+        room = RoomStore.get_room(room_uuid)
+        
+        if not room:
+            raise HTTPException(status_code=404, detail="Room not found")
+        
+        # Get player by token
+        player = PlayerStore.get_player_by_token(playerToken)
+        if not player:
+            raise HTTPException(status_code=404, detail="Player not found")
+        
+        if player.room_id != room_uuid:
+            raise HTTPException(status_code=403, detail="Player does not belong to this room")
+        
+        # Validate topic
+        topic = request.topic.strip()
+        if not topic:
+            raise HTTPException(status_code=400, detail="Topic cannot be empty")
+        
+        if len(topic) > 50:
+            raise HTTPException(status_code=400, detail="Topic must be 50 characters or less")
+        
+        # Add topic to the next round
+        next_round = room.current_round + 1
+        TopicStore.add_topic(room_uuid, player.player_id, topic, next_round)
+        
+        # Get all topics for the next round to count submissions
+        topics = TopicStore.get_topics(room_uuid, next_round)
+        submitted_count = len(topics)
+        
+        # Get all players in the room to count total
+        players = PlayerStore.get_players_by_room(room_uuid)
+        total_players = len(players)
+        
+        # Broadcast topic submitted event
+        await manager.broadcast_to_room(room_id, {
+            "type": "topic_submitted",
+            "playerId": str(player.player_id),
+            "playerName": player.player_name,
+            "topic": topic,
+            "submittedCount": submitted_count,
+            "totalPlayers": total_players
+        })
+        
+        # If all players have submitted, generate questions and start next round
+        if submitted_count >= total_players:
+            # Broadcast that all topics are collected
+            await manager.broadcast_to_room(room_id, {
+                "type": "all_topics_submitted",
+                "topics": topics,
+                "nextRound": next_round
+            })
+            
+            # Generate questions for the next round
+            sample_questions = generate_questions_with_llm(topics, room.questions_per_round)
+            
+            # Create questions in database
+            from storage.models import QuestionCreate
+            questions_to_create = [
+                QuestionCreate(
+                    room_id=room_uuid,
+                    round=next_round,
+                    question_text=q["question"],
+                    topics=q.get("topics", []),
+                    options=q["options"],
+                    correct_answer=q["correct_answer"],
+                    explanation=q.get("explanation"),
+                    question_index=i
+                )
+                for i, q in enumerate(sample_questions)
+            ]
+            
+            QuestionStore.create_questions(questions_to_create)
+            
+            # Update room's current round
+            from datetime import timezone
+            new_started_at = datetime.now(timezone.utc)
+            RoomStore.update_room_round(room_uuid, next_round, new_started_at)
+            
+            # Broadcast round changed event with new timestamp for timer sync
+            await manager.broadcast_to_room(room_id, {
+                "type": "round_changed",
+                "startedAt": new_started_at.isoformat(),
+                "currentRound": next_round,
+                "questionsCount": len(sample_questions)
+            })
+        
+        return SubmitTopicResponse(
+            success=True,
+            submittedCount=submitted_count,
+            totalPlayers=total_players
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail="Invalid room ID")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

@@ -162,8 +162,8 @@ class RoomStore:
         return RoomStore.get_room(room_id)
     
     @staticmethod
-    def update_room_round(room_id: UUID, current_round: int) -> Room:
-        """Update current round"""
+    def update_room_round(room_id: UUID, current_round: int, started_at: Optional[datetime] = None) -> Room:
+        """Update current round and optionally reset the timer"""
         r = get_redis_client()
         
         room_key = _room_key(room_id)
@@ -177,6 +177,10 @@ class RoomStore:
             "current_round": str(current_round),
             "updated_at": datetime.now(timezone.utc).isoformat()
         }
+        
+        # Update started_at if provided (for resetting timer on new round)
+        if started_at:
+            update_data["started_at"] = started_at.isoformat()
         
         r.hset(room_key, mapping=update_data)
         

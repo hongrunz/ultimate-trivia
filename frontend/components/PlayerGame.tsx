@@ -6,6 +6,7 @@ import QuestionScreen from './QuestionScreen';
 import SubmittedScreen from './SubmittedScreen';
 import GameFinished from './GameFinished';
 import RoundFinished from './RoundFinished';
+import NewRoundTopicSubmission from './NewRoundTopicSubmission';
 import { api, tokenStorage, RoomResponse, LeaderboardResponse } from '../lib/api';
 import { useWebSocket } from '../lib/useWebSocket';
 import { useGameTimer } from '../lib/useGameTimer';
@@ -33,7 +34,7 @@ interface LeaderboardEntry {
   topicScore?: { [topic: string]: number };
 }
 
-type GameState = 'question' | 'waiting' | 'submitted' | 'round_finished' | 'finished';
+type GameState = 'question' | 'waiting' | 'submitted' | 'round_finished' | 'new_round' | 'finished';
 
 export default function PlayerGame({ roomId }: PlayerGameProps) {
   const router = useRouter();
@@ -141,6 +142,23 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
     fetchLeaderboard();
   }, [fetchLeaderboard]);
 
+  const handleRoundBreakComplete = useCallback(() => {
+    console.log('⏰ ROUND BREAK COMPLETE - moving to new_round');
+    setGameState('new_round');
+  }, []);
+
+  const handleSubmitTopic = useCallback(async (topic: string) => {
+    if (!playerToken) return;
+    
+    try {
+      // TODO: Add API endpoint to submit topic for next round
+      await api.submitRoundTopic(roomId, playerToken, topic);
+    } catch (error) {
+      console.error('Failed to submit topic:', error);
+      throw error;
+    }
+  }, [roomId, playerToken]);
+
   const handleTimerExpired = useCallback(() => {
     // If in 'question' state and timer expires, auto-submit as incorrect
     if (gameState === 'question') {
@@ -164,6 +182,7 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
     gameState,
     onGameFinished: handleGameFinished,
     onRoundFinished: handleRoundFinished,
+    onRoundBreakComplete: handleRoundBreakComplete,
     onTimerExpired: handleTimerExpired,
     onQuestionChanged: handleQuestionChanged,
   });
@@ -198,7 +217,13 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
     }
     
     if (message.type === 'round_changed') {
-      // New round has started - fetch updated room data and reset to question state
+      // New round has started - update timer sync and fetch updated room data
+      if (message.startedAt) {
+        const startTime = new Date(message.startedAt);
+        if (!isNaN(startTime.getTime())) {
+          setGameStartedAt(startTime);
+        }
+      }
       setGameState('question');
       fetchRoom();
       return;
@@ -336,6 +361,17 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
         totalRounds={room.numRounds}
         leaderboard={leaderboard}
         timer={timer}
+      />
+    );
+  }
+
+  // New round topic submission state
+  if (gameState === 'new_round') {
+    return (
+      <NewRoundTopicSubmission
+        currentRound={room.currentRound + 1}
+        totalRounds={room.numRounds}
+        onSubmitTopic={handleSubmitTopic}
       />
     );
   }

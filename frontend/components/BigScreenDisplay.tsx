@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import GameFinished from './GameFinished';
 import BigScreenRoundFinished from './BigScreenRoundFinished';
+import BigScreenNewRound from './BigScreenNewRound';
 import { api, RoomResponse, LeaderboardResponse } from '../lib/api';
 import { useWebSocket } from '../lib/useWebSocket';
 import { useBackgroundMusic } from '../lib/useBackgroundMusic';
@@ -36,7 +37,7 @@ interface LeaderboardEntry {
   topicScore?: { [topic: string]: number };
 }
 
-type GameState = 'question' | 'waiting' | 'submitted' | 'round_finished' | 'finished';
+type GameState = 'question' | 'waiting' | 'submitted' | 'round_finished' | 'new_round' | 'finished';
 
 export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
   const [room, setRoom] = useState<RoomResponse | null>(null);
@@ -45,6 +46,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [gameStartedAt, setGameStartedAt] = useState<Date | null>(null);
+  const [topicSubmissionCount, setTopicSubmissionCount] = useState(0);
 
   // Helper function to map leaderboard data to UI format
   const mapLeaderboardData = useCallback((
@@ -137,6 +139,10 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     fetchLeaderboard();
   }, [fetchLeaderboard]);
 
+  const handleRoundBreakComplete = useCallback(() => {
+    setGameState('new_round');
+  }, []);
+
   const handleTimerExpired = useCallback(() => {
     // When answer timer expires, move to waiting (which triggers submitted next)
     if (gameState === 'question') {
@@ -161,6 +167,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     gameState,
     onGameFinished: handleGameFinished,
     onRoundFinished: handleRoundFinished,
+    onRoundBreakComplete: handleRoundBreakComplete,
     onTimerExpired: handleTimerExpired,
     onQuestionChanged: handleQuestionChanged,
   });
@@ -176,6 +183,9 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     type: string;
     startedAt?: string;
     currentRound?: number;
+    submittedCount?: number;
+    topics?: string[];
+    nextRound?: number;
     player?: {
       playerId: string;
       playerName: string;
@@ -194,14 +204,35 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     }
     
     if (message.type === 'round_changed') {
-      // New round has started - fetch updated room data and reset to question state
+      // New round has started - update timer sync and fetch updated room data
+      if (message.startedAt) {
+        const startTime = new Date(message.startedAt);
+        if (!isNaN(startTime.getTime())) {
+          setGameStartedAt(startTime);
+        }
+      }
       setGameState('question');
+      setTopicSubmissionCount(0); // Reset submission count
       fetchRoom();
       return;
     }
     
     if (message.type === 'answer_submitted') {
       fetchLeaderboard();
+      return;
+    }
+
+    if (message.type === 'topic_submitted') {
+      // Update submission count
+      if (message.submittedCount !== undefined) {
+        setTopicSubmissionCount(message.submittedCount);
+      }
+      return;
+    }
+
+    if (message.type === 'all_topics_submitted') {
+      // All topics collected, could auto-advance to next round here
+      // For now, we'll wait for the host or backend to trigger round_changed
       return;
     }
     
@@ -309,6 +340,21 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
           totalRounds={room.numRounds}
           leaderboard={leaderboard}
           timer={timer}
+        />
+      </>
+    );
+  }
+
+  // New round topic submission state
+  if (gameState === 'new_round') {
+    return (
+      <>
+        <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
+        <BigScreenNewRound
+          currentRound={room.currentRound + 1}
+          totalRounds={room.numRounds}
+          submittedCount={topicSubmissionCount}
+          totalPlayers={room.players.length}
         />
       </>
     );
