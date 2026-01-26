@@ -35,7 +35,7 @@ interface LeaderboardEntry {
   topicScore?: { [topic: string]: number };
 }
 
-type GameState = 'question' | 'submitted' | 'finished';
+type GameState = 'question' | 'waiting' | 'submitted' | 'finished';
 
 export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
   const [room, setRoom] = useState<RoomResponse | null>(null);
@@ -132,8 +132,16 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
   }, [fetchLeaderboard]);
 
   const handleTimerExpired = useCallback(() => {
-    // Just stay in question state, but players can't submit anymore
-  }, []);
+    // When answer timer expires, move to waiting (which triggers submitted next)
+    if (gameState === 'question') {
+      setGameState('waiting');
+    }
+    // When waiting timer expires, move to submitted (show answer)
+    if (gameState === 'waiting') {
+      setGameState('submitted');
+      fetchLeaderboard();
+    }
+  }, [gameState, fetchLeaderboard]);
 
   const handleQuestionChanged = useCallback(() => {
     setGameState('question');
@@ -263,7 +271,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
   }
 
   // Check for server sync during active gameplay
-  if (gameState === 'question' && !gameStartedAt) {
+  if ((gameState === 'question' || gameState === 'waiting' || gameState === 'submitted') && !gameStartedAt) {
     return (
       <>
         <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
@@ -306,7 +314,67 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     );
   }
 
-  // Active question display
+  // Active question or waiting display
+  if (gameState === 'question' || gameState === 'waiting') {
+    return (
+      <>
+        <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
+        <GameScreenContainer>
+          <GameTitleImage src="/assets/game_title.svg" alt="Ultimate Trivia" />
+          <BigScreenCard>
+            {/* Header with question number and timer */}
+            <BigScreenHeader>
+              <BigScreenBadge>
+                {currentQuestionIndex + 1}/{room.questionsPerRound}
+              </BigScreenBadge>
+              <BigScreenBadge>
+                {timer}
+              </BigScreenBadge>
+            </BigScreenHeader>
+
+            {/* Title */}
+            <GameTitle>Wildcard Trivia!</GameTitle>
+
+            {/* Display topics */}
+            {currentQuestion.topics && currentQuestion.topics.length > 0 && (
+              <div style={{ marginBottom: '1.5rem' }}>
+                <MutedText style={{ fontSize: '1rem', marginBottom: '0.5rem', textAlign: 'center' }}>
+                  Topics:
+                </MutedText>
+                <TopicsContainer>
+                  {currentQuestion.topics.map((topic, index) => (
+                    <TopicBadge key={index}>
+                      {topic}
+                    </TopicBadge>
+                  ))}
+                </TopicsContainer>
+              </div>
+            )}
+
+            {/* Question text */}
+            <BigScreenQuestionText>
+              {currentQuestion.question}
+            </BigScreenQuestionText>
+
+            {/* Options - no answer revealed yet */}
+            <BigScreenOptionsContainer>
+              {currentQuestion.options.map((option, index) => (
+                <BigScreenOptionBox 
+                  key={index}
+                  $showAnswer={false}
+                  $isCorrect={false}
+                >
+                  {option}
+                </BigScreenOptionBox>
+              ))}
+            </BigScreenOptionsContainer>
+          </BigScreenCard>
+        </GameScreenContainer>
+      </>
+    );
+  }
+
+  // Answer reveal with leaderboard (8-second review period)
   return (
     <>
       <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
@@ -319,12 +387,12 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
               {currentQuestionIndex + 1}/{room.questionsPerRound}
             </BigScreenBadge>
             <BigScreenBadge>
-              {timer}
+              Review: {timer}s
             </BigScreenBadge>
           </BigScreenHeader>
 
           {/* Title */}
-          <GameTitle>Wildcard Trivia!</GameTitle>
+          <GameTitle>Answer Revealed!</GameTitle>
 
           {/* Display topics */}
           {currentQuestion.topics && currentQuestion.topics.length > 0 && (
@@ -347,12 +415,12 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
             {currentQuestion.question}
           </BigScreenQuestionText>
 
-          {/* Options */}
+          {/* Options with answer revealed */}
           <BigScreenOptionsContainer>
             {currentQuestion.options.map((option, index) => (
               <BigScreenOptionBox 
                 key={index}
-                $showAnswer={timer !== undefined && timer <= 0}
+                $showAnswer={true}
                 $isCorrect={index === currentQuestion.correctAnswer}
               >
                 {option}
@@ -360,8 +428,8 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
             ))}
           </BigScreenOptionsContainer>
 
-          {/* Show explanation after time expires */}
-          {timer !== undefined && timer <= 0 && currentQuestion.explanation && (
+          {/* Show explanation */}
+          {currentQuestion.explanation && (
             <BigScreenExplanation>
               <strong>Explanation:</strong> {currentQuestion.explanation}
             </BigScreenExplanation>
@@ -370,12 +438,12 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
           {/* Leaderboard */}
           {leaderboard.length > 0 && (
             <BigScreenLeaderboardSection>
-              <BigScreenLeaderboardHeading>Leader board:</BigScreenLeaderboardHeading>
+              <BigScreenLeaderboardHeading>Leaderboard:</BigScreenLeaderboardHeading>
               <LeaderboardList>
                 {leaderboard.slice(0, 5).map((entry) => (
                   <BigScreenLeaderboardItem key={entry.playerId}>
                     <div>
-                      <span>No{entry.rank} {entry.playerName}</span>
+                      <span>#{entry.rank} {entry.playerName}</span>
                       <span>... {entry.points} pts</span>
                     </div>
                     {entry.topicScore && Object.keys(entry.topicScore).length > 0 && (

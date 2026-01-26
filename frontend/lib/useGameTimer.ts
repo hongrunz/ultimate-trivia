@@ -6,11 +6,13 @@ import { RoomResponse } from './api';
 interface UseGameTimerOptions {
   room: RoomResponse | null;
   gameStartedAt: Date | null;
-  gameState: 'question' | 'submitted' | 'finished';
+  gameState: 'question' | 'waiting' | 'submitted' | 'finished';
   onGameFinished: () => void;
   onTimerExpired: () => void;
   onQuestionChanged: () => void;
 }
+
+const REVIEW_TIME_SECONDS = 8; // Time to show answer and leaderboard
 
 export function useGameTimer({
   room,
@@ -26,7 +28,7 @@ export function useGameTimer({
   // Game timer synchronized with server timestamp
   useEffect(() => {
     const shouldRunTimer = 
-      (gameState === 'question' || gameState === 'submitted') && 
+      (gameState === 'question' || gameState === 'waiting' || gameState === 'submitted') && 
       room?.timePerQuestion && 
       gameStartedAt && 
       room.questions;
@@ -42,8 +44,10 @@ export function useGameTimer({
       // Handle clock skew by treating negative values as 0
       const validElapsedSeconds = Math.max(0, elapsedSeconds);
       
-      const calculatedQuestionIndex = Math.floor(validElapsedSeconds / room.timePerQuestion);
-      const timeInCurrentRound = validElapsedSeconds % room.timePerQuestion;
+      // Total time per question cycle = answer time + review time
+      const totalTimePerCycle = room.timePerQuestion + REVIEW_TIME_SECONDS;
+      const calculatedQuestionIndex = Math.floor(validElapsedSeconds / totalTimePerCycle);
+      const timeInCurrentCycle = validElapsedSeconds % totalTimePerCycle;
       
       // Sync question index if needed
       if (calculatedQuestionIndex !== currentQuestionIndex && calculatedQuestionIndex < room.questions.length) {
@@ -57,9 +61,17 @@ export function useGameTimer({
         return;
       }
       
-      // Update timer
-      const remainingTime = room.timePerQuestion - timeInCurrentRound;
-      setTimer(Math.max(0, remainingTime));
+      // Update timer based on current phase
+      if (timeInCurrentCycle < room.timePerQuestion) {
+        // Answer phase (question or waiting)
+        const remainingTime = room.timePerQuestion - timeInCurrentCycle;
+        setTimer(Math.max(0, remainingTime));
+      } else {
+        // Review phase (submitted)
+        const timeInReview = timeInCurrentCycle - room.timePerQuestion;
+        const remainingReviewTime = REVIEW_TIME_SECONDS - timeInReview;
+        setTimer(Math.max(0, remainingReviewTime));
+      }
     };
 
     updateTimer();
@@ -67,10 +79,18 @@ export function useGameTimer({
     return () => clearInterval(interval);
   }, [gameState, currentQuestionIndex, room?.timePerQuestion, room?.questions, gameStartedAt, onGameFinished, onQuestionChanged]);
 
-  // Auto-submit when timer reaches 0 if user hasn't submitted yet
+  // Handle timer expiration based on current state
   useEffect(() => {
-    if (timer === 0 && gameState === 'question') {
-      onTimerExpired();
+    if (timer === 0) {
+      if (gameState === 'question') {
+        // Timer expired during question phase - auto-submit and move to waiting
+        onTimerExpired();
+      } else if (gameState === 'waiting') {
+        // Timer expired during waiting phase - move to submitted (show answer)
+        onTimerExpired();
+      }
+      // Note: When timer expires in 'submitted' state, onQuestionChanged is called
+      // automatically by the main timer logic when calculatedQuestionIndex changes
     }
   }, [timer, gameState, onTimerExpired]);
 

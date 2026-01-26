@@ -13,11 +13,7 @@ import {
 } from './styled/FormComponents';
 import {
   QRCodeContainer,
-  PlayerAvatar,
-  PlayerList,
-  Ellipsis,
   GameContainer,
-  BottomSection,
   TopicsSection,
   TopicsContainer,
   TopicBadge,
@@ -51,10 +47,9 @@ export default function StartGame({ roomId }: StartGameProps) {
   const [error, setError] = useState('');
   const [sessionMode, setSessionMode] = useState<'player' | 'display'>('player');
 
-  // Detect session mode on mount
+  // Detect session mode after mount to avoid hydration mismatch
   useEffect(() => {
-    const mode = getSessionMode();
-    setSessionMode(mode);
+    setSessionMode(getSessionMode());
   }, []);
 
   // Generate the room URL
@@ -81,12 +76,13 @@ export default function StartGame({ roomId }: StartGameProps) {
   // Initial fetch
   useEffect(() => {
     if (roomId) {
-      fetchRoom();
+      void fetchRoom();
     }
-  }, [roomId, fetchRoom]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId]);
 
   // WebSocket connection for real-time updates
-  const handleWebSocketMessage = useCallback((message: any) => {
+  const handleWebSocketMessage = useCallback((message: { type: string; startedAt?: string }) => {
     switch (message.type) {
       case 'player_joined':
         // Refresh room data to get updated players and topics
@@ -119,7 +115,7 @@ export default function StartGame({ roomId }: StartGameProps) {
     try {
       await navigator.clipboard.writeText(roomUrl);
       alert('URL copied to clipboard!');
-    } catch (err) {
+    } catch {
       alert('Failed to copy URL');
     }
   };
@@ -228,7 +224,6 @@ export default function StartGame({ roomId }: StartGameProps) {
           {/* Main Game Card */}
           <FormCard>
             <GameContainer>
-              <Title>Wildcard Trivia!</Title>
 
               {/* Big Screen Mode Notice */}
               {sessionMode === 'display' && (

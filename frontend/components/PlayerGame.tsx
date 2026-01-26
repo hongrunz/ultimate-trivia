@@ -32,7 +32,7 @@ interface LeaderboardEntry {
   topicScore?: { [topic: string]: number };
 }
 
-type GameState = 'question' | 'submitted' | 'finished';
+type GameState = 'question' | 'waiting' | 'submitted' | 'finished';
 
 export default function PlayerGame({ roomId }: PlayerGameProps) {
   const router = useRouter();
@@ -133,9 +133,16 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
   }, [fetchLeaderboard]);
 
   const handleTimerExpired = useCallback(() => {
-    setIsCorrect(false);
-    setGameState('submitted');
-  }, []);
+    // If in 'question' state and timer expires, auto-submit as incorrect
+    if (gameState === 'question') {
+      setIsCorrect(false);
+      setGameState('waiting');
+    }
+    // If in 'waiting' state and timer expires, move to submitted (show answer)
+    if (gameState === 'waiting') {
+      setGameState('submitted');
+    }
+  }, [gameState]);
 
   const handleQuestionChanged = useCallback(() => {
     setGameState('question');
@@ -228,7 +235,7 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
       }
       
       setIsCorrect(response.isCorrect);
-      setGameState('submitted');
+      setGameState('waiting'); // Change to waiting state instead of submitted
       fetchLeaderboard();
     } catch {
       // Fallback to local validation if API fails
@@ -241,7 +248,7 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
       }
       
       setIsCorrect(isAnswerCorrect);
-      setGameState('submitted');
+      setGameState('waiting'); // Change to waiting state instead of submitted
     }
   };
 
@@ -299,7 +306,7 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
   }
 
   // Check for server sync during active gameplay
-  if ((gameState === 'question' || gameState === 'submitted') && !gameStartedAt) {
+  if ((gameState === 'question' || gameState === 'waiting' || gameState === 'submitted') && !gameStartedAt) {
     return <div style={centeredScreenStyle}>Synchronizing with server...</div>;
   }
 
@@ -325,7 +332,26 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
     );
   }
 
-  // Answer submitted state
+  // Waiting state (answer submitted, waiting for others)
+  if (gameState === 'waiting') {
+    return (
+      <PageContainer>
+        <FormCard style={{ textAlign: 'center' }}>
+          <Title>⏳ Waiting for other players...</Title>
+          <CenteredMessage>
+            <p style={{ fontSize: '1.5rem', margin: '2rem 0' }}>
+              Your answer has been submitted!
+            </p>
+            <p style={{ fontSize: '1rem', color: colors.textSecondary }}>
+              Time remaining: {timer}s
+            </p>
+          </CenteredMessage>
+        </FormCard>
+      </PageContainer>
+    );
+  }
+
+  // Answer submitted state (show results for 8 seconds)
   if (gameState === 'submitted') {
     return (
       <SubmittedScreen
