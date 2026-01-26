@@ -17,6 +17,7 @@ import {
 } from './styled/FormComponents';
 import { ErrorBox, ErrorIcon, ErrorHeading, ErrorMessage } from './styled/ErrorComponents';
 import { CenteredMessage } from './styled/StatusComponents';
+import { colors } from './styled/theme';
 
 interface PlayerGameProps {
   roomId: string;
@@ -245,11 +246,11 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
 
   const centeredScreenStyle = {
     minHeight: '100vh',
-    backgroundColor: '#4b5563',
+    backgroundColor: colors.bgContrast,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    color: '#ffffff'
+    color: colors.surface
   };
 
   const handleJoinRedirect = () => {
@@ -260,6 +261,7 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
   if (hasNoToken) {
     return (
       <PageContainer>
+        <GameTitleImage src="/assets/game_title.svg" alt="Ultimate Trivia" />
         <FormCard>
           <Title>Access Denied</Title>
           <ErrorBox>

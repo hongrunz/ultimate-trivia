@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Shadows_Into_Light } from "next/font/google";
+import { Geist, Geist_Mono, Shadows_Into_Light, DM_Sans, Itim } from "next/font/google";
 import "./globals.css";
 import StyledComponentsRegistry from "../frontend/components/styled/StyledComponentsRegistry";
 
@@ -19,6 +19,19 @@ const shadowsIntoLight = Shadows_Into_Light({
   weight: "400",
 });
 
+const dmSans = DM_Sans({
+  variable: "--font-dm-sans",
+  subsets: ["latin"],
+  display: "swap",
+});
+
+const itim = Itim({
+  variable: "--font-itim",
+  subsets: ["latin"],
+  weight: "400",
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   title: "Wildcard Trivia!",
   description: "Create and join trivia games",
@@ -32,7 +45,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} ${shadowsIntoLight.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${shadowsIntoLight.variable} ${dmSans.variable} ${itim.variable} antialiased`}
       >
         <StyledComponentsRegistry>{children}</StyledComponentsRegistry>
       </body>

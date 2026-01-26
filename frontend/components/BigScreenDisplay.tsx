@@ -7,7 +7,7 @@ import { useWebSocket } from '../lib/useWebSocket';
 import { useBackgroundMusic } from '../lib/useBackgroundMusic';
 import { useGameTimer } from '../lib/useGameTimer';
 import MusicControl from './MusicControl';
-import { GameScreenContainer, GameTitle, LeaderboardList, TopicsContainer, TopicBadge } from './styled/GameComponents';
+import { GameScreenContainer, GameTitle, LeaderboardList, TopicsContainer, TopicBadge, GameTitleImage } from './styled/GameComponents';
 import {
   BigScreenCard,
   BigScreenHeader,
@@ -311,6 +311,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     <>
       <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
       <GameScreenContainer>
+        <GameTitleImage src="/assets/game_title.svg" alt="Ultimate Trivia" />
         <BigScreenCard>
           {/* Header with question number and timer */}
           <BigScreenHeader>

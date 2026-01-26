@@ -1,4 +1,5 @@
 import styled from 'styled-components';
+import { colors, typography } from './theme';
 
 export const OptionsContainer = styled.div`
   width: 100%;
@@ -15,19 +16,21 @@ export const OptionsContainer = styled.div`
 export const OptionButton = styled.button`
   width: 100%;
   padding: 0.75rem 0.75rem;
-  border: 1px solid #9ca3af; /* gray-400 */
+  border: 1px solid ${colors.border};
   border-radius: 0.375rem;
-  background-color: #ffffff;
-  color: #111827; /* gray-900 */
-  font-size: 0.95rem;
-  font-weight: 600;
+  background-color: ${colors.surface};
+  color: ${colors.typeMain};
+  font-family: ${typography.fontFamily.dmSans};
+  font-size: ${typography.fontSize.sm};
+  font-weight: ${typography.fontWeight.semibold};
+  line-height: ${typography.lineHeight.normal};
   text-align: left;
   cursor: pointer;
   transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.05s ease;
 
   &:hover:not(:disabled) {
-    background-color: #f3f4f6; /* gray-100 */
-    border-color: #6b7280; /* gray-500 */
+    background-color: ${colors.surfaceSecondary};
+    border-color: ${colors.border};
   }
 
   &:active:not(:disabled) {
@@ -36,8 +39,8 @@ export const OptionButton = styled.button`
 
   &:focus-visible {
     outline: none;
-    border-color: #3b82f6; /* blue-500 */
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+    border-color: ${colors.accent};
+    box-shadow: 0 0 0 3px ${colors.surfaceSecondary};
   }
 
   &:disabled {

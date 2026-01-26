@@ -1,4 +1,5 @@
 import styled from 'styled-components';
+import { typography } from './theme';
 
 // Error message components
 export const ErrorBox = styled.div`
@@ -11,19 +12,27 @@ export const ErrorBox = styled.div`
 `;
 
 export const ErrorIcon = styled.div`
-  font-size: 3rem;
+  font-family: ${typography.fontFamily.dmSans};
+  font-size: ${typography.fontSize.display3xl};
+  font-weight: ${typography.fontWeight.normal};
+  line-height: ${typography.lineHeight.normal};
   margin-bottom: 1rem;
 `;
 
 export const ErrorHeading = styled.div`
-  font-size: 1.25rem;
-  font-weight: bold;
+  font-family: ${typography.presets.h2.fontFamily};
+  font-size: ${typography.fontSize.displaysm};
+  font-weight: ${typography.fontWeight.bold};
+  line-height: ${typography.presets.h2.lineHeight};
   color: #dc2626;
   margin-bottom: 0.5rem;
 `;
 
 export const ErrorMessage = styled.div`
-  font-size: 0.95rem;
+  font-family: ${typography.fontFamily.dmSans};
+  font-size: ${typography.fontSize.sm};
+  font-weight: ${typography.fontWeight.normal};
+  line-height: ${typography.lineHeight.normal};
   color: #1f2937;
   margin-top: 0.5rem;
 `;
@@ -32,6 +41,9 @@ export const ErrorMessage = styled.div`
 export const ErrorText = styled.div`
   color: #dc2626;
   margin-top: 1rem;
-  font-size: 0.875rem;
+  font-family: ${typography.presets.bodySmall.fontFamily};
+  font-size: ${typography.presets.bodySmall.fontSize};
+  font-weight: ${typography.presets.bodySmall.fontWeight};
+  line-height: ${typography.presets.bodySmall.lineHeight};
   text-align: center;
 `;

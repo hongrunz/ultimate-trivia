@@ -10,6 +10,7 @@ import {
   QuestionText,
   TopicsContainer,
   TopicBadge,
+  GameTitleImage,
 } from './styled/GameComponents';
 import { OptionsContainer, OptionButton } from './styled/OptionsContainer';
 import { MutedText } from './styled/StatusComponents';
@@ -52,6 +53,7 @@ export default function QuestionScreen({
 
   return (
     <GameScreenContainer>
+      <GameTitleImage src="/assets/game_title.svg" alt="Ultimate Trivia" />
       <GameCard>
         <GameHeader>
           <CircularBadge>{currentQuestion}/{totalQuestions}</CircularBadge>
