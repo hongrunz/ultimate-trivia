@@ -1,4 +1,4 @@
-import { setup, assign } from 'xstate';
+import { setup, assign, fromCallback } from 'xstate';
 import { RoomResponse } from './api';
 
 export interface LeaderboardEntry {
@@ -11,12 +11,14 @@ export interface LeaderboardEntry {
 
 // Context holds the game data
 export interface GameContext {
+  currentRound: number;
   room: RoomResponse | null;
   gameStartedAt: Date | null;
   isCorrect: boolean;
   score: number;
   leaderboard: LeaderboardEntry[];
   error: string;
+  currentQuestionIndex: number; // Track which question we're on (0-indexed)
 }
 
 // Events that can trigger state transitions
@@ -27,7 +29,7 @@ export type GameEvent =
   | { type: 'ANSWER_SUBMITTED'; isCorrect: boolean; score: number }
   | { type: 'ROUND_FINISHED'; leaderboard: LeaderboardEntry[] }
   | { type: 'ROUND_BREAK_COMPLETE' }
-  | { type: 'GAME_FINISHED'; leaderboard: LeaderboardEntry[] }
+  | { type: 'GAME_FINISHED'; leaderboard: LeaderboardEntry[]}
   | { type: 'QUESTION_CHANGED' }
   | { type: 'ROUND_CHANGED'; startedAt: Date; room: RoomResponse }
   | { type: 'LEADERBOARD_UPDATED'; leaderboard: LeaderboardEntry[] }
@@ -38,6 +40,52 @@ export const gameStateMachine = setup({
   types: {} as {
     context: GameContext;
     events: GameEvent;
+  },
+  actors: {
+    questionTimer: fromCallback(({ input, self }) => {
+      // Use timePerQuestion from Redis (input is the context)
+      const context = input as GameContext;
+      const timeLimitSeconds = context.room?.timePerQuestion;
+      const gameStartedAt = context.gameStartedAt;
+      
+      if (!timeLimitSeconds || !gameStartedAt) {
+        // If no time limit or start time, don't start timer
+        return () => {};
+      }
+      
+      // Calculate elapsed time since game started
+      const now = new Date();
+      const elapsedMs = now.getTime() - gameStartedAt.getTime();
+      const elapsedSeconds = Math.floor(elapsedMs / 1000);
+      
+      // Calculate which question cycle we're in using currentQuestionIndex
+      // Each cycle = timePerQuestion + review time (8 seconds)
+      const REVIEW_TIME_SECONDS = 8;
+      const totalTimePerCycle = timeLimitSeconds + REVIEW_TIME_SECONDS;
+      
+      // Calculate when the current question cycle started
+      const questionIndex = context.currentQuestionIndex;
+      const cycleStartTime = questionIndex * totalTimePerCycle;
+      const timeInCurrentCycle = elapsedSeconds - cycleStartTime;
+      
+      // If we're in the question phase of the current cycle
+      if (timeInCurrentCycle >= 0 && timeInCurrentCycle < timeLimitSeconds) {
+        const remainingInQuestion = timeLimitSeconds - timeInCurrentCycle;
+        const timeout = setTimeout(() => {
+          self.send({ type: 'TIMER_EXPIRED' } as GameEvent);
+        }, remainingInQuestion * 1000);
+        
+        return () => clearTimeout(timeout);
+      } else {
+        // We're already past the question phase, send expired immediately
+        // Use a small delay to avoid synchronous state updates
+        const timeout = setTimeout(() => {
+          self.send({ type: 'TIMER_EXPIRED' } as GameEvent);
+        }, 10);
+        
+        return () => clearTimeout(timeout);
+      }
+    }),
   },
   actions: {
     updateRoom: assign({
@@ -82,6 +130,23 @@ export const gameStateMachine = setup({
     score: 0,
     leaderboard: [],
     error: '',
+      currentQuestionIndex: 0,
+      currentRound: 0,
+  },
+  onTransition: ({ value, context, event }: { value: string | Record<string, unknown> | undefined; context: GameContext; event: GameEvent }) => {
+    console.log('🔄 Game State Transition:', {
+      to: value,
+      event: event.type,
+      context: {
+        hasRoom: !!context.room,
+        roomId: context.room?.roomId,
+        currentRound: context.room?.currentRound,
+        numRounds: context.room?.numRounds,
+        gameStartedAt: context.gameStartedAt,
+        score: context.score,
+        error: context.error || undefined,
+      },
+    });
   },
   states: {
     loading: {
@@ -104,16 +169,20 @@ export const gameStateMachine = setup({
     },
 
     question: {
+      // Use dynamic timer based on timePerQuestion from Redis
+      invoke: {
+        src: 'questionTimer',
+        input: ({ context }) => context,
+      },
       on: {
         ANSWER_SUBMITTED: {
-          target: 'waiting',
           actions: assign({
             isCorrect: ({ event }) => (event as Extract<GameEvent, { type: 'ANSWER_SUBMITTED' }>).isCorrect,
             score: ({ event }) => (event as Extract<GameEvent, { type: 'ANSWER_SUBMITTED' }>).score,
           }),
         },
         TIMER_EXPIRED: {
-          target: 'waiting',
+          target: 'submitted',
           actions: assign({
             isCorrect: () => false,
           }),
@@ -130,24 +199,40 @@ export const gameStateMachine = setup({
       },
     },
 
-    waiting: {
-      on: {
-        TIMER_EXPIRED: 'submitted',
-        ROOM_UPDATED: {
-          actions: 'updateRoom',
-        },
-        LEADERBOARD_UPDATED: {
-          actions: 'updateLeaderboard',
-        },
-        PLAYER_JOINED: {
-          actions: 'addPlayer',
-        },
-      },
-    },
-
     submitted: {
+      // Review time: 8 seconds to show answer and leaderboard
+      // After 8 seconds, check if we've completed all questions in the round
+      // If currentQuestionIndex + 1 >= questionsPerRound, send ROUND_FINISHED
+      // Otherwise, transition to next question
+      after: {
+        8000: [
+          {
+            target: 'roundFinished',
+            guard: ({ context }: { context: GameContext }) => {
+              // Check if the next question would exceed questionsPerRound
+              // (currentQuestionIndex is 0-indexed, so we check if next index >= questionsPerRound)
+              const questionsPerRound = context.room?.questionsPerRound ?? 0;
+              return context.currentQuestionIndex + 1 >= questionsPerRound;
+            },
+            actions: assign({
+              leaderboard: ({ context }) => context.leaderboard,
+            }),
+          },
+          {
+            target: 'question',
+            actions: assign({
+              currentQuestionIndex: ({ context }) => context.currentQuestionIndex + 1,
+            }),
+          },
+        ],
+      },
       on: {
-        QUESTION_CHANGED: 'question',
+        QUESTION_CHANGED: {
+          target: 'question',
+          actions: assign({
+            currentQuestionIndex: ({ context }) => context.currentQuestionIndex + 1,
+          }),
+        },
         ROUND_FINISHED: {
           target: 'roundFinished',
           actions: assign({
@@ -173,8 +258,27 @@ export const gameStateMachine = setup({
     },
 
     roundFinished: {
+      after: {
+        // Round break time: 10 seconds between rounds
+        10000: [
+          {
+            target: 'finished',
+            guard: ({ context }) => {
+              // Check if we've completed all rounds
+              const numRounds = context.room?.numRounds ?? 0;
+              const currentRound = context.room?.currentRound ?? 0;
+              return currentRound >= numRounds;
+            },
+            actions: assign({
+              leaderboard: ({ context }) => context.leaderboard,
+            }),
+          },
+          {
+            target: 'newRound',
+          },
+        ],
+      },
       on: {
-        ROUND_BREAK_COMPLETE: 'newRound',
         ROOM_UPDATED: {
           actions: 'updateRoom',
         },
@@ -191,6 +295,7 @@ export const gameStateMachine = setup({
           actions: assign({
             gameStartedAt: ({ event }) => (event as Extract<GameEvent, { type: 'ROUND_CHANGED' }>).startedAt,
             room: ({ event }) => (event as Extract<GameEvent, { type: 'ROUND_CHANGED' }>).room,
+            currentQuestionIndex: () => 0, // Reset question index for new round
           }),
         },
         ROOM_UPDATED: {

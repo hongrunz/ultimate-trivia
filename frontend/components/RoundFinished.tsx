@@ -51,7 +51,7 @@ export default function RoundFinished({
             : 'Final round complete! Calculating results...'}
         </MutedText>
 
-        {timer !== undefined && (
+        {timer !== undefined && currentRound < totalRounds && (
           <div style={{ 
             textAlign: 'center', 
             fontSize: '1.5rem', 
@@ -59,7 +59,7 @@ export default function RoundFinished({
             marginBottom: '1.5rem',
             padding: '1rem',
             borderRadius: '0.5rem',
-            backgroundColor: 'rgba(255, 255, 255, 0.1)'
+            backgroundColor: 'rgba(255, 255, 255, 0)'
           }}>
             Next round starts in: {timer}s
           </div>

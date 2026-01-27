@@ -10,7 +10,7 @@ import RoundFinished from './RoundFinished';
 import NewRoundTopicSubmission from './NewRoundTopicSubmission';
 import { api, tokenStorage, LeaderboardResponse, RoomResponse } from '../lib/api';
 import { useWebSocket } from '../lib/useWebSocket';
-import { useGameTimer } from '../lib/useGameTimer';
+import { useGameTimerDisplay } from '../lib/useGameTimerDisplay';
 import { gameStateMachine, type LeaderboardEntry } from '../lib/gameStateMachine';
 import { 
   PageContainer, 
@@ -112,21 +112,6 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
     }
   }, [roomId, fetchLeaderboard, state.context.leaderboard, send]);
 
-  // Timer callbacks
-  const handleGameFinished = useCallback(async () => {
-    await fetchLeaderboard();
-    send({ type: 'GAME_FINISHED', leaderboard: state.context.leaderboard });
-  }, [fetchLeaderboard, state.context.leaderboard, send]);
-
-  const handleRoundFinished = useCallback(async () => {
-    await fetchLeaderboard();
-    send({ type: 'ROUND_FINISHED', leaderboard: state.context.leaderboard });
-  }, [fetchLeaderboard, state.context.leaderboard, send]);
-
-  const handleRoundBreakComplete = useCallback(() => {
-    send({ type: 'ROUND_BREAK_COMPLETE' });
-  }, [send]);
-
   const handleSubmitTopic = useCallback(async (topic: string) => {
     if (!playerToken) return;
     
@@ -138,25 +123,47 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
     }
   }, [roomId, playerToken]);
 
-  const handleTimerExpired = useCallback(() => {
-    send({ type: 'TIMER_EXPIRED' });
-  }, [send]);
+  // Get current question index from state machine context
+  const currentQuestionIndex = state.context.currentQuestionIndex;
 
-  const handleQuestionChanged = useCallback(() => {
-    send({ type: 'QUESTION_CHANGED' });
-  }, [send]);
-
-  // Game timer hook
-  const { timer, currentQuestionIndex } = useGameTimer({
+  // Game timer display hook (synchronized to server time)
+  const { timer } = useGameTimerDisplay({
     room: state.context.room,
+    gameState: state.value as 'question' | 'submitted' | 'roundFinished' | 'newRound' | 'finished',
     gameStartedAt: state.context.gameStartedAt,
-    gameState: state.value as 'question' | 'waiting' | 'submitted' | 'roundFinished' | 'newRound' | 'finished',
-    onGameFinished: handleGameFinished,
-    onRoundFinished: handleRoundFinished,
-    onRoundBreakComplete: handleRoundBreakComplete,
-    onTimerExpired: handleTimerExpired,
-    onQuestionChanged: handleQuestionChanged,
+    currentQuestionIndex: state.context.currentQuestionIndex,
   });
+
+  // Send TIMER_EXPIRED when question timer runs out (synchronized to server time)
+  useEffect(() => {
+    if (state.value === 'question' && state.context.room?.timePerQuestion && state.context.gameStartedAt) {
+      const calculateRemainingTime = () => {
+        const now = new Date();
+        const elapsedMs = now.getTime() - state.context.gameStartedAt!.getTime();
+        const elapsedSeconds = Math.floor(elapsedMs / 1000);
+        
+        const REVIEW_TIME_SECONDS = 8;
+        const totalTimePerCycle = state.context.room!.timePerQuestion + REVIEW_TIME_SECONDS;
+        const timeInCurrentCycle = elapsedSeconds % totalTimePerCycle;
+        
+        if (timeInCurrentCycle < state.context.room!.timePerQuestion) {
+          return state.context.room!.timePerQuestion - timeInCurrentCycle;
+        }
+        return 0; // Already past question phase
+      };
+      
+      const remainingSeconds = calculateRemainingTime();
+      if (remainingSeconds > 0) {
+        const timeout = setTimeout(() => {
+          send({ type: 'TIMER_EXPIRED' });
+        }, remainingSeconds * 1000);
+        return () => clearTimeout(timeout);
+      } else {
+        // Already past, send immediately
+        send({ type: 'TIMER_EXPIRED' });
+      }
+    }
+  }, [state.value, state.context.room?.timePerQuestion, state.context.gameStartedAt, send]);
 
   // Initial room fetch
   useEffect(() => {
@@ -293,7 +300,7 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
   }
 
   // Check for server sync during active gameplay
-  if ((state.value === 'question' || state.value === 'waiting' || state.value === 'submitted') && !state.context.gameStartedAt) {
+  if ((state.value === 'question' || state.value === 'submitted') && !state.context.gameStartedAt) {
     return <div style={centeredScreenStyle}>Synchronizing with server...</div>;
   }
 
@@ -339,25 +346,6 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
       <CenteredMessage>
         <p>Loading question {currentQuestionIndex + 1}...</p>
       </CenteredMessage>
-    );
-  }
-
-  // Waiting state (answer submitted, waiting for others)
-  if (state.value === 'waiting') {
-    return (
-      <PageContainer>
-        <FormCard style={{ textAlign: 'center' }}>
-          <Title>⏳ Waiting for other players...</Title>
-          <CenteredMessage>
-            <p style={{ fontSize: '1.5rem', margin: '2rem 0' }}>
-              Your answer has been submitted!
-            </p>
-            <p style={{ fontSize: '1rem', color: colors.typeSecondary }}>
-              Time remaining: {timer}s
-            </p>
-          </CenteredMessage>
-        </FormCard>
-      </PageContainer>
     );
   }
 

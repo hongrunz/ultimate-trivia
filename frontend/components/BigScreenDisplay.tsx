@@ -8,7 +8,7 @@ import BigScreenNewRound from './BigScreenNewRound';
 import { api, LeaderboardResponse, RoomResponse } from '../lib/api';
 import { useWebSocket } from '../lib/useWebSocket';
 import { useBackgroundMusic } from '../lib/useBackgroundMusic';
-import { useGameTimer } from '../lib/useGameTimer';
+import { useGameTimerDisplay } from '../lib/useGameTimerDisplay';
 import { gameStateMachine, type LeaderboardEntry } from '../lib/gameStateMachine';
 import MusicControl from './MusicControl';
 import { GameScreenContainer, GameTitle, LeaderboardList, TopicsContainer, TopicBadge, GameTitleImage } from './styled/GameComponents';
@@ -112,41 +112,47 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     }
   }, [roomId, fetchLeaderboard, state.context.leaderboard, send]);
 
-  // Timer callbacks
-  const handleGameFinished = useCallback(async () => {
-    await fetchLeaderboard();
-    send({ type: 'GAME_FINISHED', leaderboard: state.context.leaderboard });
-  }, [fetchLeaderboard, state.context.leaderboard, send]);
+  // Get current question index from state machine context
+  const currentQuestionIndex = state.context.currentQuestionIndex;
 
-  const handleRoundFinished = useCallback(async () => {
-    await fetchLeaderboard();
-    send({ type: 'ROUND_FINISHED', leaderboard: state.context.leaderboard });
-  }, [fetchLeaderboard, state.context.leaderboard, send]);
-
-  const handleRoundBreakComplete = useCallback(() => {
-    send({ type: 'ROUND_BREAK_COMPLETE' });
-  }, [send]);
-
-  const handleTimerExpired = useCallback(() => {
-    send({ type: 'TIMER_EXPIRED' });
-  }, [send]);
-
-  const handleQuestionChanged = useCallback(() => {
-    send({ type: 'QUESTION_CHANGED' });
-    fetchLeaderboard();
-  }, [fetchLeaderboard, send]);
-
-  // Game timer hook
-  const { timer, currentQuestionIndex } = useGameTimer({
+  // Game timer display hook (synchronized to server time)
+  const { timer } = useGameTimerDisplay({
     room: state.context.room,
+    gameState: state.value as 'question' | 'submitted' | 'roundFinished' | 'newRound' | 'finished',
     gameStartedAt: state.context.gameStartedAt,
-    gameState: state.value as 'question' | 'waiting' | 'submitted' | 'roundFinished' | 'newRound' | 'finished',
-    onGameFinished: handleGameFinished,
-    onRoundFinished: handleRoundFinished,
-    onRoundBreakComplete: handleRoundBreakComplete,
-    onTimerExpired: handleTimerExpired,
-    onQuestionChanged: handleQuestionChanged,
+    currentQuestionIndex: state.context.currentQuestionIndex,
   });
+
+  // Send TIMER_EXPIRED when question timer runs out (synchronized to server time)
+  useEffect(() => {
+    if (state.value === 'question' && state.context.room?.timePerQuestion && state.context.gameStartedAt) {
+      const calculateRemainingTime = () => {
+        const now = new Date();
+        const elapsedMs = now.getTime() - state.context.gameStartedAt!.getTime();
+        const elapsedSeconds = Math.floor(elapsedMs / 1000);
+        
+        const REVIEW_TIME_SECONDS = 8;
+        const totalTimePerCycle = state.context.room!.timePerQuestion + REVIEW_TIME_SECONDS;
+        const timeInCurrentCycle = elapsedSeconds % totalTimePerCycle;
+        
+        if (timeInCurrentCycle < state.context.room!.timePerQuestion) {
+          return state.context.room!.timePerQuestion - timeInCurrentCycle;
+        }
+        return 0; // Already past question phase
+      };
+      
+      const remainingSeconds = calculateRemainingTime();
+      if (remainingSeconds > 0) {
+        const timeout = setTimeout(() => {
+          send({ type: 'TIMER_EXPIRED' });
+        }, remainingSeconds * 1000);
+        return () => clearTimeout(timeout);
+      } else {
+        // Already past, send immediately
+        send({ type: 'TIMER_EXPIRED' });
+      }
+    }
+  }, [state.value, state.context.room?.timePerQuestion, state.context.gameStartedAt, send]);
 
   // Initial room fetch
   useEffect(() => {
@@ -265,7 +271,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
   }
 
   // Check for server sync during active gameplay
-  if ((state.value === 'question' || state.value === 'waiting' || state.value === 'submitted') && !state.context.gameStartedAt) {
+  if ((state.value === 'question' || state.value === 'submitted') && !state.context.gameStartedAt) {
     return (
       <>
         <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
@@ -338,8 +344,8 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     );
   }
 
-  // Active question or waiting display
-  if (state.value === 'question' || state.value === 'waiting') {
+  // Active question display
+  if (state.value === 'question') {
     return (
       <>
         <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
