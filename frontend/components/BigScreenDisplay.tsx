@@ -11,16 +11,15 @@ import { useBackgroundMusic } from '../lib/useBackgroundMusic';
 import { useGameTimerDisplay } from '../lib/useGameTimerDisplay';
 import { gameStateMachine, type LeaderboardEntry } from '../lib/gameStateMachine';
 import MusicControl from './MusicControl';
-import { GameScreenContainer, GameTitle, LeaderboardList, TopicsContainer, TopicBadge, GameTitleImage, PlayerListTitle, PlayerListItem, PlayerListItemAvatar, PlayerListItemName, PlayerListContainer } from './styled/GameComponents';
+import { GameScreenContainer, GameTitle, TopicsContainer, TopicBadge, GameTitleImage, PlayerListTitle, PlayerListItem, PlayerListItemAvatar, PlayerListItemName, PlayerListContainer } from './styled/GameComponents';
 import {
   BigScreenCard,
   BigScreenHeader,
   BigScreenBadge,
   BigScreenQuestionText,
+  BigScreenOptionsContainer,
+  BigScreenOptionBox,
   BigScreenExplanation,
-  BigScreenLeaderboardSection,
-  BigScreenLeaderboardHeading,
-  BigScreenLeaderboardItem,
   ErrorTitle,
   BigScreenLayout,
   GamePlayStatus,
@@ -28,7 +27,6 @@ import {
   BigScreenQuestionCard,
   BigScreenContainer,
   BigScreenGameTitle,
-  BigScreenGameTitlePart,
   TriviCommentaryCard,
   TriviCommentaryCharacterContainer,
   TriviCommentaryTextContainer,
@@ -40,9 +38,9 @@ import {
   LeaderboardScore,
   BigScreenRightContainer,
 } from './styled/BigScreenComponents';
-import { OptionsContainer, OptionButton, BigScreenOptionsContainer, BigScreenOptionButton } from './styled/OptionsContainer';
+import { BigScreenOptionButton } from './styled/OptionsContainer';
 import { MutedText } from './styled/StatusComponents';
-import { colors, typography } from './styled/theme';
+import { colors } from './styled/theme';
 
 interface BigScreenDisplayProps {
   roomId: string;
@@ -474,8 +472,8 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
             <BigScreenLeaderboardCard>
               <PlayerListTitle>Leaderboard</PlayerListTitle>
               <PlayerListContainer>
-                {leaderboard.length > 0 ? (
-                  leaderboard.map((entry) => {
+                {state.context.leaderboard.length > 0 ? (
+                  state.context.leaderboard.map((entry: LeaderboardEntry) => {
                     // Generate a consistent avatar based on player ID
                     const avatarCount = 10;
                     const avatarIndex = (entry.playerId.charCodeAt(0) % avatarCount) + 1;
@@ -508,7 +506,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
           <BigScreenRightContainer>
             {/* Top bar with round and timer */}
             <BigScreenTopBar>
-              <span>Round {currentRound} of {totalRounds}</span>
+              <span>Round {state.context.room.currentRound} of {state.context.room.numRounds}</span>
               <TimerBadge>{timer !== undefined ? `${timer}s` : '--'}</TimerBadge>
             </BigScreenTopBar>
 
@@ -516,7 +514,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
             <BigScreenQuestionCard>
               {/* Question progress */}
               <QuestionProgress>
-                Question {currentQuestionIndex + 1}/{room.questionsPerRound}
+                Question {currentQuestionIndex + 1}/{state.context.room.questionsPerRound}
               </QuestionProgress>
 
               {/* Question text */}
