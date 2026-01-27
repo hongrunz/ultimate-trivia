@@ -6,7 +6,7 @@ import { RoomResponse } from './api';
 interface UseGameTimerOptions {
   room: RoomResponse | null;
   gameStartedAt: Date | null;
-  gameState: 'question' | 'waiting' | 'submitted' | 'round_finished' | 'new_round' | 'finished';
+  gameState: 'question' | 'waiting' | 'submitted' | 'roundFinished' | 'newRound' | 'finished';
   onGameFinished: () => void;
   onRoundFinished?: () => void;  // Called when a round completes (but more rounds remain)
   onRoundBreakComplete?: () => void;  // Called when round break timer completes
@@ -34,7 +34,7 @@ export function useGameTimer({
   // Game timer synchronized with server timestamp
   useEffect(() => {
     const shouldRunTimer = 
-      (gameState === 'question' || gameState === 'waiting' || gameState === 'submitted' || gameState === 'round_finished') && 
+      (gameState === 'question' || gameState === 'waiting' || gameState === 'submitted' || gameState === 'roundFinished') && 
       room?.timePerQuestion && 
       gameStartedAt && 
       room.questions;
@@ -55,37 +55,46 @@ export function useGameTimer({
       const calculatedQuestionIndex = Math.floor(validElapsedSeconds / totalTimePerCycle);
       const timeInCurrentCycle = validElapsedSeconds % totalTimePerCycle;
       
-      // Check if we're in the review phase (submitted screen showing)
-      const isInReviewPhase = timeInCurrentCycle >= room.timePerQuestion;
-      
       // Sync question index if needed (only for questions that exist)
       if (calculatedQuestionIndex !== currentQuestionIndex && calculatedQuestionIndex < room.questions.length) {
         setCurrentQuestionIndex(calculatedQuestionIndex);
         onQuestionChanged(); // Reset to 'question' state for the new question
       }
       
-      // Force transition to submitted when entering review phase
-      if (isInReviewPhase && gameState === 'waiting') {
-        onTimerExpired();
-      }
-      
-      // Handle the last question specially - ensure submitted screen shows
-      if (calculatedQuestionIndex === room.questions.length - 1 && isInReviewPhase) {
-        // We're in the review phase of the LAST question
+      // Update timer based on current phase
+      if (timeInCurrentCycle < room.timePerQuestion) {
+        // Answer phase (question or waiting)
+        const remainingTime = room.timePerQuestion - timeInCurrentCycle;
+        setTimer(Math.max(0, remainingTime));
+      } else {
+        // We're now in review phase
+        // First, ensure we've transitioned from 'question' to 'waiting'
+        if (gameState === 'question') {
+          onTimerExpired(); // question -> waiting
+        }
+        // Then, ensure we've transitioned from 'waiting' to 'submitted'
+        if (gameState === 'waiting') {
+          onTimerExpired(); // waiting -> submitted
+        }
+        
+        // Review phase (submitted) - set timer for review period
         const timeInReview = timeInCurrentCycle - room.timePerQuestion;
         const remainingReviewTime = REVIEW_TIME_SECONDS - timeInReview;
         setTimer(Math.max(0, remainingReviewTime));
         
-        // When review of last question is done, transition to next state
-        if (remainingReviewTime === 0) {
-          const hasMoreRounds = room.currentRound < room.numRounds;
-          if (hasMoreRounds && onRoundFinished) {
-            onRoundFinished();
-          } else {
-            onGameFinished();
+        // For the last question, check if we should transition to roundFinished/finished
+        if (calculatedQuestionIndex === room.questions.length - 1) {
+          // When review of last question is done, transition to next state
+          // BUT only if we're already in 'submitted' state (answer is being shown)
+          if (remainingReviewTime <= 0 && gameState === 'submitted') {
+            const hasMoreRounds = room.currentRound < room.numRounds;
+            if (hasMoreRounds && onRoundFinished) {
+              onRoundFinished();
+            } else {
+              onGameFinished();
+            }
           }
         }
-        return;
       }
       
       // Check if we've completely exceeded all questions + review time
@@ -98,24 +107,6 @@ export function useGameTimer({
           onGameFinished();
         }
         return;
-      }
-      
-      // Update timer based on current phase (for non-last questions)
-      if (timeInCurrentCycle < room.timePerQuestion) {
-        // Answer phase (question or waiting)
-        const remainingTime = room.timePerQuestion - timeInCurrentCycle;
-        setTimer(Math.max(0, remainingTime));
-      } else {
-        // We're now in review phase
-        // First, ensure we've transitioned from 'question' to 'waiting'
-        if (gameState === 'question') {
-          onTimerExpired();
-        }
-        
-        // Review phase (submitted)
-        const timeInReview = timeInCurrentCycle - room.timePerQuestion;
-        const remainingReviewTime = REVIEW_TIME_SECONDS - timeInReview;
-        setTimer(Math.max(0, remainingReviewTime));
       }
     };
 
@@ -141,7 +132,7 @@ export function useGameTimer({
 
   // Round break countdown timer
   useEffect(() => {
-    if (gameState !== 'round_finished') return;
+    if (gameState !== 'roundFinished') return;
 
     const updateRoundBreakTimer = () => {
       // Initialize start time on first run
@@ -168,8 +159,8 @@ export function useGameTimer({
     const interval = setInterval(updateRoundBreakTimer, 100);
     return () => {
       clearInterval(interval);
-      // Reset on cleanup when leaving round_finished state
-      if (gameState !== 'round_finished') {
+      // Reset on cleanup when leaving roundFinished state
+      if (gameState !== 'roundFinished') {
         setRoundBreakStartTime(0);
       }
     };

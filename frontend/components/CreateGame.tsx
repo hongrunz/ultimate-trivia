@@ -18,8 +18,8 @@ import { GameTitleImage } from './styled/GameComponents';
 import { api, tokenStorage } from '../lib/api';
 import { getSessionMode, getDeviceType } from '../lib/deviceDetection';
 
-const DEFAULT_NUM_QUESTIONS = 5;
-const DEFAULT_TIME_LIMIT = 20;
+const DEFAULT_NUM_QUESTIONS = 3;
+const DEFAULT_TIME_LIMIT = 8;
 const DEFAULT_NUM_ROUNDS = 3;
 
 export default function CreateGame() {

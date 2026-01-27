@@ -1,13 +1,15 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useMachine } from '@xstate/react';
 import GameFinished from './GameFinished';
 import BigScreenRoundFinished from './BigScreenRoundFinished';
 import BigScreenNewRound from './BigScreenNewRound';
-import { api, RoomResponse, LeaderboardResponse } from '../lib/api';
+import { api, LeaderboardResponse, RoomResponse } from '../lib/api';
 import { useWebSocket } from '../lib/useWebSocket';
 import { useBackgroundMusic } from '../lib/useBackgroundMusic';
 import { useGameTimer } from '../lib/useGameTimer';
+import { gameStateMachine, type LeaderboardEntry } from '../lib/gameStateMachine';
 import MusicControl from './MusicControl';
 import { GameScreenContainer, GameTitle, LeaderboardList, TopicsContainer, TopicBadge, GameTitleImage } from './styled/GameComponents';
 import {
@@ -29,23 +31,11 @@ interface BigScreenDisplayProps {
   roomId: string;
 }
 
-interface LeaderboardEntry {
-  playerId: string;
-  rank: number;
-  playerName: string;
-  points: number;
-  topicScore?: { [topic: string]: number };
-}
-
-type GameState = 'question' | 'waiting' | 'submitted' | 'round_finished' | 'new_round' | 'finished';
-
 export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
-  const [room, setRoom] = useState<RoomResponse | null>(null);
-  const [gameState, setGameState] = useState<GameState>('question');
-  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [gameStartedAt, setGameStartedAt] = useState<Date | null>(null);
+  // Use XState machine for formal state management
+  const [state, send] = useMachine(gameStateMachine);
+  
+  // Local state for topic submission tracking (not part of game state machine)
   const [topicSubmissionCount, setTopicSubmissionCount] = useState(0);
 
   // Helper function to map leaderboard data to UI format
@@ -53,8 +43,8 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     leaderboardData: LeaderboardResponse,
     players: RoomResponse['players']
   ): LeaderboardEntry[] => {
-    const playerMap = new Map(
-      players.map(p => [p.playerId, p.playerName])
+    const playerMap = new Map<string, string>(
+      players.map((p: RoomResponse['players'][number]) => [p.playerId, p.playerName])
     );
     
     // Calculate ranks with proper tie handling
@@ -68,7 +58,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
       const playerName = playerMap.get(entry.playerId);
       if (!playerName) {
         console.warn(`Player name not found for ID: ${entry.playerId}`);
-        console.warn('Available players:', players.map(p => ({ id: p.playerId, name: p.playerName })));
+        console.warn('Available players:', players.map((p: RoomResponse['players'][number]) => ({ id: p.playerId, name: p.playerName })));
       }
       
       return {
@@ -87,84 +77,70 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
       
       // Always fetch fresh room data to ensure player names are up to date
       const currentRoom = await api.getRoom(roomId);
-      setRoom(currentRoom);
+      send({ type: 'ROOM_UPDATED', room: currentRoom });
       
       const formattedLeaderboard = mapLeaderboardData(leaderboardData, currentRoom.players);
-      setLeaderboard(formattedLeaderboard);
+      send({ type: 'LEADERBOARD_UPDATED', leaderboard: formattedLeaderboard });
     } catch {
-      setLeaderboard([]);
+      send({ type: 'LEADERBOARD_UPDATED', leaderboard: [] });
     }
-  }, [roomId, mapLeaderboardData]);
+  }, [roomId, mapLeaderboardData, send]);
 
   const fetchRoom = useCallback(async () => {
     try {
       const roomData = await api.getRoom(roomId);
-      setRoom(roomData);
 
       if (roomData.status === 'started' && roomData.questions) {
-        setIsLoading(false);
-        setGameState('question');
-        
         // Parse and set game start timestamp for timer synchronization
         if (roomData.startedAt) {
           const startTime = new Date(roomData.startedAt);
           if (!isNaN(startTime.getTime())) {
-            setGameStartedAt(startTime);
+            send({ type: 'GAME_LOADED', room: roomData, startedAt: startTime });
           }
         }
         
         fetchLeaderboard();
       } else if (roomData.status === 'finished') {
-        setGameState('finished');
-        setIsLoading(false);
-        fetchLeaderboard();
+        send({ type: 'ROOM_UPDATED', room: roomData });
+        await fetchLeaderboard();
+        send({ type: 'GAME_FINISHED', leaderboard: state.context.leaderboard });
       } else {
-        setGameState('question');
-        setIsLoading(false);
+        send({ type: 'ROOM_UPDATED', room: roomData });
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load game');
-      setIsLoading(false);
+      send({ type: 'ERROR', error: err instanceof Error ? err.message : 'Failed to load game' });
     }
-  }, [roomId, fetchLeaderboard]);
+  }, [roomId, fetchLeaderboard, state.context.leaderboard, send]);
 
   // Timer callbacks
-  const handleGameFinished = useCallback(() => {
-    setGameState('finished');
-    fetchLeaderboard();
-  }, [fetchLeaderboard]);
+  const handleGameFinished = useCallback(async () => {
+    await fetchLeaderboard();
+    send({ type: 'GAME_FINISHED', leaderboard: state.context.leaderboard });
+  }, [fetchLeaderboard, state.context.leaderboard, send]);
 
-  const handleRoundFinished = useCallback(() => {
-    setGameState('round_finished');
-    fetchLeaderboard();
-  }, [fetchLeaderboard]);
+  const handleRoundFinished = useCallback(async () => {
+    await fetchLeaderboard();
+    send({ type: 'ROUND_FINISHED', leaderboard: state.context.leaderboard });
+  }, [fetchLeaderboard, state.context.leaderboard, send]);
 
   const handleRoundBreakComplete = useCallback(() => {
-    setGameState('new_round');
-  }, []);
+    send({ type: 'ROUND_BREAK_COMPLETE' });
+  }, [send]);
 
   const handleTimerExpired = useCallback(() => {
-    // When answer timer expires, move to waiting (which triggers submitted next)
-    if (gameState === 'question') {
-      setGameState('waiting');
-    }
-    // When waiting timer expires, move to submitted (show answer)
-    if (gameState === 'waiting') {
-      setGameState('submitted');
-      fetchLeaderboard();
-    }
-  }, [gameState, fetchLeaderboard]);
+    send({ type: 'TIMER_EXPIRED' });
+  }, [send]);
 
   const handleQuestionChanged = useCallback(() => {
-    setGameState('question');
+    send({ type: 'QUESTION_CHANGED' });
     fetchLeaderboard();
-  }, [fetchLeaderboard]);
+  }, [fetchLeaderboard, send]);
 
   // Game timer hook
   const { timer, currentQuestionIndex } = useGameTimer({
-    room,
-    gameStartedAt,
-    gameState,
+    room: state.context.room,
+    gameStartedAt: state.context.gameStartedAt,
+    gameState: state.value as 'question' | 'waiting' | 'submitted' | 'roundFinished' | 'newRound' | 'finished',
     onGameFinished: handleGameFinished,
     onRoundFinished: handleRoundFinished,
     onRoundBreakComplete: handleRoundBreakComplete,
@@ -179,7 +155,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
   }, []);
 
   // WebSocket message handler
-  const handleWebSocketMessage = useCallback((message: {
+  const handleWebSocketMessage = useCallback(async (message: {
     type: string;
     startedAt?: string;
     currentRound?: number;
@@ -193,27 +169,20 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     };
   }) => {
     if (message.type === 'game_started') {
-      if (message.startedAt) {
-        const startTime = new Date(message.startedAt);
-        if (!isNaN(startTime.getTime())) {
-          setGameStartedAt(startTime);
-        }
-      }
       fetchRoom();
       return;
     }
     
     if (message.type === 'round_changed') {
       // New round has started - update timer sync and fetch updated room data
+      const roomData = await api.getRoom(roomId);
       if (message.startedAt) {
         const startTime = new Date(message.startedAt);
         if (!isNaN(startTime.getTime())) {
-          setGameStartedAt(startTime);
+          send({ type: 'ROUND_CHANGED', startedAt: startTime, room: roomData });
         }
       }
-      setGameState('question');
       setTopicSubmissionCount(0); // Reset submission count
-      fetchRoom();
       return;
     }
     
@@ -237,30 +206,9 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     }
     
     if (message.type === 'player_joined' && message.player) {
-      setRoom((prevRoom) => {
-        if (!prevRoom) return null;
-        
-        const playerExists = prevRoom.players.some(
-          (p) => p.playerId === message.player!.playerId
-        );
-        
-        if (playerExists) return prevRoom;
-        
-        return {
-          ...prevRoom,
-          players: [
-            ...prevRoom.players,
-            {
-              playerId: message.player!.playerId,
-              playerName: message.player!.playerName,
-              score: 0,
-              joinedAt: message.player!.joinedAt,
-            }
-          ],
-        };
-      });
+      send({ type: 'PLAYER_JOINED', player: message.player });
     }
-  }, [fetchRoom, fetchLeaderboard]);
+  }, [fetchRoom, fetchLeaderboard, roomId, send]);
 
   // WebSocket connection
   useWebSocket(roomId, {
@@ -275,7 +223,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
   });
 
   // Loading state
-  if (isLoading) {
+  if (state.value === 'loading') {
     return (
       <>
         <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
@@ -289,13 +237,13 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
   }
 
   // Error state
-  if (error) {
+  if (state.value === 'error' || state.context.error) {
     return (
       <>
         <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
         <GameScreenContainer>
           <BigScreenCard>
-            <ErrorTitle>Error: {error}</ErrorTitle>
+            <ErrorTitle>Error: {state.context.error}</ErrorTitle>
           </BigScreenCard>
         </GameScreenContainer>
       </>
@@ -303,7 +251,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
   }
 
   // Waiting for game to start
-  if (!room?.questions?.length) {
+  if (!state.context.room?.questions?.length) {
     return (
       <>
         <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
@@ -317,7 +265,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
   }
 
   // Check for server sync during active gameplay
-  if ((gameState === 'question' || gameState === 'waiting' || gameState === 'submitted') && !gameStartedAt) {
+  if ((state.value === 'question' || state.value === 'waiting' || state.value === 'submitted') && !state.context.gameStartedAt) {
     return (
       <>
         <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
@@ -331,14 +279,14 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
   }
 
   // Round finished state (show between rounds)
-  if (gameState === 'round_finished') {
+  if (state.value === 'roundFinished') {
     return (
       <>
         <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
         <BigScreenRoundFinished
-          currentRound={room.currentRound}
-          totalRounds={room.numRounds}
-          leaderboard={leaderboard}
+          currentRound={state.context.room.currentRound}
+          totalRounds={state.context.room.numRounds}
+          leaderboard={state.context.leaderboard}
           timer={timer}
         />
       </>
@@ -346,35 +294,35 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
   }
 
   // New round topic submission state
-  if (gameState === 'new_round') {
+  if (state.value === 'newRound') {
     return (
       <>
         <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
         <BigScreenNewRound
-          currentRound={room.currentRound + 1}
-          totalRounds={room.numRounds}
+          currentRound={state.context.room.currentRound + 1}
+          totalRounds={state.context.room.numRounds}
           submittedCount={topicSubmissionCount}
-          totalPlayers={room.players.length}
+          totalPlayers={state.context.room.players.length}
         />
       </>
     );
   }
 
   // Game finished state
-  if (gameState === 'finished') {
+  if (state.value === 'finished') {
     return (
       <>
         <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
         <GameFinished
-          totalQuestions={room.questionsPerRound}
+          totalQuestions={state.context.room.questionsPerRound}
           finalScore={0} // Big screen doesn't have a score
-          leaderboard={leaderboard}
+          leaderboard={state.context.leaderboard}
         />
       </>
     );
   }
 
-  const currentQuestion = room.questions[currentQuestionIndex];
+  const currentQuestion = state.context.room.questions[currentQuestionIndex];
   
   // Question loading state
   if (!currentQuestion) {
@@ -391,7 +339,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
   }
 
   // Active question or waiting display
-  if (gameState === 'question' || gameState === 'waiting') {
+  if (state.value === 'question' || state.value === 'waiting') {
     return (
       <>
         <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
@@ -401,7 +349,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
             {/* Header with question number and timer */}
             <BigScreenHeader>
               <BigScreenBadge>
-                {currentQuestionIndex + 1}/{room.questionsPerRound}
+                {currentQuestionIndex + 1}/{state.context.room.questionsPerRound}
               </BigScreenBadge>
               <BigScreenBadge>
                 {timer}
@@ -457,7 +405,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
           {/* Header with question number and timer */}
           <BigScreenHeader>
             <BigScreenBadge>
-              {currentQuestionIndex + 1}/{room.questionsPerRound}
+              {currentQuestionIndex + 1}/{state.context.room.questionsPerRound}
             </BigScreenBadge>
             <BigScreenBadge>
               Review: {timer}s
@@ -509,11 +457,11 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
           )}
 
           {/* Leaderboard */}
-          {leaderboard.length > 0 && (
+          {state.context.leaderboard.length > 0 && (
             <BigScreenLeaderboardSection>
               <BigScreenLeaderboardHeading>Leaderboard:</BigScreenLeaderboardHeading>
               <LeaderboardList>
-                {leaderboard.slice(0, 5).map((entry) => (
+                {state.context.leaderboard.slice(0, 5).map((entry) => (
                   <BigScreenLeaderboardItem key={entry.playerId}>
                     <div>
                       <span>#{entry.rank} {entry.playerName}</span>
