@@ -105,6 +105,16 @@ async def create_room(request: CreateRoomRequest):
         )
         
         room = RoomStore.create_room(room_data)
+
+        # Seed round-1 topics with any default topics provided at room creation.
+        # This ensures host-provided topics always appear in `collectedTopics`
+        # (and get used for question generation alongside player submissions).
+        if request.topics:
+            from uuid import uuid4
+            for t in request.topics:
+                topic = (t or "").strip()
+                if topic:
+                    TopicStore.add_topic(room.room_id, uuid4(), topic, round=1)
         
         # Only create a player for the host if in 'player' mode (mobile)
         # In 'display' mode (web/big screen), the host is not a player

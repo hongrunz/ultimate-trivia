@@ -6,7 +6,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export interface CreateRoomRequest {
   name: string;
-  topics: string[];
+  topics?: string[];
   questionsPerRound: number;
   timePerQuestion: number;
   sessionMode?: 'player' | 'display'; // 'player' = mobile host joins as player, 'display' = web big screen
