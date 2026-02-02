@@ -9,6 +9,7 @@ from uuid import UUID
 import os
 
 from apis.rooms import router as rooms_router
+from apis.voice import router as voice_router
 from apis.websocket import manager
 from storage.client import get_redis_client
 
@@ -36,6 +37,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(rooms_router)
+app.include_router(voice_router)
 
 
 @app.websocket("/ws/{room_id}")

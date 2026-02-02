@@ -47,6 +47,11 @@ export default function QuestionScreen({
     setMounted(true);
   }, []);
 
+  // Reset selected option when question changes
+  useEffect(() => {
+    setSelectedOption(null);
+  }, [currentQuestion, question]);
+
   const handleOptionClick = (option: string) => {
     setSelectedOption(option);
   };
@@ -54,6 +59,8 @@ export default function QuestionScreen({
   const handleSubmit = () => {
     if (selectedOption !== null) {
       onSubmit(selectedOption);
+      // Disable button after submission to prevent double-submission
+      setSelectedOption(null);
     }
   };
 

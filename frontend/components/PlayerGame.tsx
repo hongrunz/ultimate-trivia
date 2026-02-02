@@ -287,9 +287,22 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
   });
 
   const handleSubmitAnswer = async (answer: string) => {
-    if (!state.context.room?.questions || !playerToken) return;
+    if (!state.context.room?.questions || !playerToken) {
+      console.error('Cannot submit answer: missing questions or player token');
+      return;
+    }
+
+    if (currentQuestionIndex < 0 || currentQuestionIndex >= state.context.room.questions.length) {
+      console.error('Cannot submit answer: invalid question index');
+      return;
+    }
 
     const currentQuestion = state.context.room.questions[currentQuestionIndex];
+    
+    if (!currentQuestion || !currentQuestion.id) {
+      console.error('Cannot submit answer: invalid question');
+      return;
+    }
     
     try {
       const response = await api.submitAnswer(roomId, playerToken, currentQuestion.id, answer);
@@ -302,7 +315,8 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
       });
       
       fetchLeaderboard();
-    } catch {
+    } catch (error) {
+      console.error('Failed to submit answer:', error);
       // Fallback to local validation if API fails
       const isAnswerCorrect = 
         answer.toLowerCase().trim() === 

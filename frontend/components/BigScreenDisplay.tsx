@@ -10,7 +10,9 @@ import { useWebSocket } from '../lib/useWebSocket';
 import { useBackgroundMusic } from '../lib/useBackgroundMusic';
 import { useGameTimerDisplay } from '../lib/useGameTimerDisplay';
 import { gameStateMachine, type LeaderboardEntry } from '../lib/gameStateMachine';
+import { useGameVoiceAgent } from '../lib/useGameVoiceAgent';
 import MusicControl from './MusicControl';
+import VoiceControl from './VoiceControl';
 import { GameTitle, GameTitleImage, PlayerListTitle, PlayerListItem, PlayerListItemAvatar, PlayerListItemName, PlayerListContainer } from './styled/GameComponents';
 import {
   BigScreenCard,
@@ -299,11 +301,33 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     volume: 0.3,
   });
 
+  // Voice agent for hosting announcements
+  const { 
+    isEnabled: isVoiceEnabled, 
+    toggleEnabled: toggleVoice,
+    availableVoices,
+    selectedVoice,
+    setVoice,
+  } = useGameVoiceAgent({
+    enabled: true,
+    gameState: state.value,
+    context: state.context,
+    currentQuestionIndex: state.context.currentQuestionIndex,
+    timer,
+  });
+
   // Loading state
   if (state.value === 'loading') {
     return (
       <>
         <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
+        <VoiceControl 
+          isEnabled={isVoiceEnabled} 
+          onToggle={toggleVoice}
+          availableVoices={availableVoices}
+          selectedVoice={selectedVoice}
+          onVoiceSelect={setVoice}
+        />
         <BigScreenContainer>
           <BigScreenCard>
             <GameTitle>Loading game...</GameTitle>
@@ -318,6 +342,13 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     return (
       <>
         <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
+        <VoiceControl 
+          isEnabled={isVoiceEnabled} 
+          onToggle={toggleVoice}
+          availableVoices={availableVoices}
+          selectedVoice={selectedVoice}
+          onVoiceSelect={setVoice}
+        />
         <BigScreenContainer>
           <BigScreenCard>
             <ErrorTitle>Error: {state.context.error}</ErrorTitle>
@@ -332,6 +363,13 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     return (
       <>
         <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
+        <VoiceControl 
+          isEnabled={isVoiceEnabled} 
+          onToggle={toggleVoice}
+          availableVoices={availableVoices}
+          selectedVoice={selectedVoice}
+          onVoiceSelect={setVoice}
+        />
         <BigScreenContainer>
           <BigScreenCard>
             <GameTitle>Waiting for game to start...</GameTitle>
@@ -346,6 +384,13 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     return (
       <>
         <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
+        <VoiceControl 
+          isEnabled={isVoiceEnabled} 
+          onToggle={toggleVoice}
+          availableVoices={availableVoices}
+          selectedVoice={selectedVoice}
+          onVoiceSelect={setVoice}
+        />
         <BigScreenContainer>
           <BigScreenCard>
             <GameTitle>Synchronizing with server...</GameTitle>
@@ -360,6 +405,13 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     return (
       <>
         <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
+        <VoiceControl 
+          isEnabled={isVoiceEnabled} 
+          onToggle={toggleVoice}
+          availableVoices={availableVoices}
+          selectedVoice={selectedVoice}
+          onVoiceSelect={setVoice}
+        />
         <BigScreenRoundFinished
           currentRound={state.context.room.currentRound}
           totalRounds={state.context.room.numRounds}
@@ -375,6 +427,13 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     return (
       <>
         <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
+        <VoiceControl 
+          isEnabled={isVoiceEnabled} 
+          onToggle={toggleVoice}
+          availableVoices={availableVoices}
+          selectedVoice={selectedVoice}
+          onVoiceSelect={setVoice}
+        />
         <BigScreenNewRound
           currentRound={state.context.room.currentRound + 1}
           totalRounds={state.context.room.numRounds}
@@ -392,6 +451,13 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     return (
       <>
         <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
+        <VoiceControl 
+          isEnabled={isVoiceEnabled} 
+          onToggle={toggleVoice}
+          availableVoices={availableVoices}
+          selectedVoice={selectedVoice}
+          onVoiceSelect={setVoice}
+        />
         <GameFinished
           totalQuestions={state.context.room.questionsPerRound}
           finalScore={0} // Big screen doesn't have a score
@@ -408,6 +474,13 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     return (
       <>
         <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
+        <VoiceControl 
+          isEnabled={isVoiceEnabled} 
+          onToggle={toggleVoice}
+          availableVoices={availableVoices}
+          selectedVoice={selectedVoice}
+          onVoiceSelect={setVoice}
+        />
         <BigScreenContainer>
           <BigScreenCard>
             <GameTitle>Loading question {currentQuestionIndex + 1}...</GameTitle>

@@ -186,6 +186,70 @@ export const api = {
       body: JSON.stringify({ topic }),
     });
   },
+
+  /**
+   * Get voice commentary for a game event
+   */
+  async getVoiceCommentary(eventType: string, context: Record<string, unknown>): Promise<string> {
+    return fetchAPI<{ commentary: string }>('/api/voice/commentary', {
+      method: 'POST',
+      body: JSON.stringify({ event_type: eventType, context }),
+    }).then(res => res.commentary);
+  },
+
+  /**
+   * Convert text to speech using Google Cloud TTS (returns audio blob URL)
+   */
+  async textToSpeech(
+    text: string,
+    options?: {
+      languageCode?: string;
+      voiceName?: string;
+      speakingRate?: number;
+      pitch?: number;
+    }
+  ): Promise<string> {
+    const url = `${API_BASE_URL}/api/voice/speak`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        text,
+        language_code: options?.languageCode || 'en-US',
+        voice_name: options?.voiceName || null,
+        speaking_rate: options?.speakingRate || 1.0,
+        pitch: options?.pitch || 0.0,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
+      throw new Error(error.detail || `HTTP error! status: ${response.status}`);
+    }
+
+    // Convert response to blob and create object URL
+    const blob = await response.blob();
+    return URL.createObjectURL(blob);
+  },
+
+  /**
+   * List available Google Cloud TTS voices
+   */
+  async listVoices(languageCode: string = 'en-US'): Promise<Array<{
+    name: string;
+    language_code: string;
+    ssml_gender: string;
+    natural_sample_rate_hertz: number;
+  }>> {
+    return fetchAPI<{ voices: Array<{
+      name: string;
+      language_code: string;
+      ssml_gender: string;
+      natural_sample_rate_hertz: number;
+    }> }>(`/api/voice/voices?language_code=${languageCode}`).then(res => res.voices);
+  },
 };
 
 // Token storage utilities
