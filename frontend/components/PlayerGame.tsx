@@ -44,6 +44,8 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
 
   // Live topic list for "newRound" screen (built from websocket events)
   const [newRoundTopics, setNewRoundTopics] = useState<string[]>([]);
+  // Points gained this question (for "+N" animation after answer reveal); key = playerId
+  const [pointsGained, setPointsGained] = useState<Record<string, number>>({});
 
   // Check if player has a valid token - if not, show error immediately
   const hasNoToken = !playerToken;
@@ -81,18 +83,28 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
     });
   }, []);
 
-  const fetchLeaderboard = useCallback(async () => {
+  const fetchLeaderboard = useCallback(async (options?: { trackPointsGain?: boolean }) => {
+    const prevLeaderboard = stateRef.current.context.leaderboard;
     try {
       const leaderboardData = await api.getLeaderboard(roomId);
-      
-      // Always fetch fresh room data to ensure player names are up to date
       const currentRoom = await api.getRoom(roomId);
       send({ type: 'ROOM_UPDATED', room: currentRoom });
-      
       const formattedLeaderboard = mapLeaderboardData(leaderboardData, currentRoom.players);
+      if (options?.trackPointsGain && prevLeaderboard.length > 0) {
+        const gains: Record<string, number> = {};
+        formattedLeaderboard.forEach((entry) => {
+          const prev = prevLeaderboard.find((e) => e.playerId === entry.playerId);
+          const prevPoints = prev?.points ?? 0;
+          const delta = entry.points - prevPoints;
+          if (delta > 0) gains[entry.playerId] = delta;
+        });
+        setPointsGained(gains);
+        setTimeout(() => setPointsGained({}), 4000);
+      }
       send({ type: 'LEADERBOARD_UPDATED', leaderboard: formattedLeaderboard });
     } catch {
       send({ type: 'LEADERBOARD_UPDATED', leaderboard: [] });
+      setPointsGained({});
     }
   }, [roomId, mapLeaderboardData, send]);
 
@@ -167,6 +179,34 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
     }
   }, [state.value, state.context.room?.timePerQuestion, state.context.questionStartedAt, send]);
 
+  // Advance from submitted at server time (reviewStartedAt + 8s) so big screen and players stay in sync
+  const submittedEnteredAtRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (state.value !== 'submitted') {
+      submittedEnteredAtRef.current = null;
+      return;
+    }
+    if (submittedEnteredAtRef.current === null) {
+      submittedEnteredAtRef.current = Date.now();
+    }
+    const reviewStartedAt = state.context.reviewStartedAt;
+    const deadlineMs = reviewStartedAt
+      ? reviewStartedAt.getTime() + 8000
+      : submittedEnteredAtRef.current + 8000;
+    const check = () => {
+      if (Date.now() >= deadlineMs) {
+        send({ type: 'ADVANCE_AFTER_REVIEW' });
+        return true;
+      }
+      return false;
+    };
+    if (check()) return;
+    const interval = setInterval(() => {
+      if (check()) clearInterval(interval);
+    }, 100);
+    return () => clearInterval(interval);
+  }, [state.value, state.context.reviewStartedAt, send]);
+
   // Initial room fetch
   useEffect(() => {
     if (hasNoToken) return; // Don't fetch if no token
@@ -178,6 +218,7 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
   const handleWebSocketMessage = useCallback(async (message: {
     type: string;
     startedAt?: string;
+    reviewStartedAt?: string;
     currentRound?: number;
     questionId?: string;
     playerId?: string;
@@ -230,7 +271,7 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
           send({ type: 'ALL_ANSWERED' });
         }
       }
-      fetchLeaderboard();
+      // Do not fetch leaderboard here — only update after answer is revealed
       return;
     }
 
@@ -241,9 +282,16 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
       const messageQuestionId = message.questionId != null ? String(message.questionId) : '';
       const questionMatch = !messageQuestionId || !currentQuestionId || messageQuestionId === String(currentQuestionId);
       if (inQuestion && questionMatch) {
-        send({ type: 'ALL_ANSWERED' });
+        const reviewStartedAt =
+          typeof message.reviewStartedAt === 'string'
+            ? new Date(message.reviewStartedAt)
+            : undefined;
+        send({
+          type: 'ALL_ANSWERED',
+          ...(isNaN(reviewStartedAt?.getTime() ?? NaN) ? {} : { reviewStartedAt: reviewStartedAt! }),
+        });
       }
-      fetchLeaderboard();
+      // Leaderboard will be fetched when we enter 'submitted' (see effect below)
       return;
     }
 
@@ -268,6 +316,16 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
     }
   }, [fetchRoom, fetchLeaderboard, roomId, send]);
 
+  // Fetch leaderboard only when we enter answer-reveal (submitted) state; track points gained for animation
+  const prevStateRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const currentState = typeof state.value === 'string' ? state.value : undefined;
+    if (currentState === 'submitted' && prevStateRef.current !== 'submitted') {
+      fetchLeaderboard({ trackPointsGain: true });
+    }
+    prevStateRef.current = currentState;
+  }, [state.value, fetchLeaderboard]);
+
   // WebSocket connection
   useWebSocket(roomId, {
     onMessage: handleWebSocketMessage,
@@ -287,8 +345,7 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
         score: response.currentScore,
         selectedAnswer: answer,
       });
-      
-      fetchLeaderboard();
+      // Leaderboard updates only after answer is revealed, not on submit
     } catch {
       // Fallback to local validation if API fails
       const isAnswerCorrect = 
@@ -399,10 +456,10 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
     return (
       <>
         <GameFinished
+          roomId={roomId}
           totalQuestions={state.context.room.questionsPerRound}
           finalScore={state.context.score}
           leaderboard={state.context.leaderboard}
-          showLeaderboard={true}
         />
       </>
     );
@@ -435,6 +492,7 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
           selectedAnswer={state.context.selectedAnswer}
           explanation={currentQuestion.explanation || ''}
           leaderboard={state.context.leaderboard}
+          pointsGained={pointsGained}
           timer={timer}
         />
       </>

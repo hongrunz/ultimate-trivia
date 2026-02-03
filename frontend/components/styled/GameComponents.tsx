@@ -54,7 +54,7 @@ export const CardsContainer = styled.div`
 
 export const PlayerListCard = styled.div`
   background-color: ${colors.surface};
-  border-radius: 40px;
+  border-radius: 32px;
   padding: 2rem;
   width: 100%;
   max-width: 20rem;
@@ -130,7 +130,7 @@ export const GameTitleImage = styled.img`
   }
 `;
 
-// Player header: Primary background, full-bleed. Title centered in header; Trivi on the left.
+// Player header: Primary background, full-bleed. Title centered in header; Trivi on the left. Always visible on all screen sizes.
 export const PlayerHeaderBar = styled.header`
   width: 100%;
   margin: 0;
@@ -139,7 +139,9 @@ export const PlayerHeaderBar = styled.header`
   flex-direction: row;
   align-items: center;
   justify-content: center;
-  position: relative;
+  position: sticky;
+  top: 0;
+  z-index: 10;
   padding: 0.75rem 1rem;
   flex-shrink: 0;
 `;
@@ -151,7 +153,7 @@ export const GameScreenContent = styled.div`
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 1rem;
+  padding: 0;
 `;
 
 // For form-based player views (Join, Start, Create, Access Denied): outer no padding, content padded
@@ -289,6 +291,11 @@ export const GameScreenContainer = styled.div`
   padding: 0;
 `;
 
+// Same as GameScreenContainer but with primary background (e.g. game finished screen)
+export const GameFinishedScreenContainer = styled(GameScreenContainer)`
+  background-color: ${colors.primary};
+`;
+
 export const GameHeaderRow = styled.div`
   width: 100%;
   max-width: 28rem;
@@ -343,7 +350,7 @@ export const GameCard = styled.div`
   display: flex;
   flex-direction: column;
   min-height: 400px;
-  border-radius: 40px;
+  border-radius: 32px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
 `;
 
@@ -411,7 +418,7 @@ export const GameTitle = styled.h2`
   line-height: ${typography.presets.h2.lineHeight};
   color: ${colors.surface};
   text-align: center;
-  margin: 0 0 2rem 0;
+  margin: 16px 0 2rem 0;
 `;
 
 export const QuestionText = styled.h3`

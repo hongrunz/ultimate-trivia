@@ -80,8 +80,8 @@ export default function RoundFinished({
                     <PlayerListItem
                       key={entry.playerId}
                       style={{
-                        backgroundColor: highlight ? 'rgba(255, 215, 0, 0.15)' : undefined,
-                        border: highlight ? '2px solid rgba(255, 215, 0, 0.6)' : undefined,
+                        backgroundColor: highlight ? 'unset' : undefined,
+                        border: 'none',
                         borderRadius: '0.5rem',
                         padding: '0.5rem',
                       }}

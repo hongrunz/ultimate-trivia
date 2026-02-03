@@ -291,7 +291,7 @@ export const BigScreenGameTitlePart = styled.span<{ $color: string }>`
 // Trivi commentary card
 export const TriviCommentaryCard = styled.div`
   background-color:${colors.surface};
-  border-radius: 40px;
+  border-radius: 32px;
   padding: 2rem;
   margin-bottom: 2rem;
   display: flex;
@@ -344,11 +344,11 @@ export const TriviCommentaryTextContainer = styled.div`
 // Trivi commentary title text
 export const TriviCommentaryTitle = styled.div`
   font-family: ${typography.presets.Commentary.fontFamily};
-  font-size: ${typography.presets.Commentary.fontSize};
+  font-size: 40px;
   font-weight: ${typography.presets.Commentary.fontWeight};
   line-height: ${typography.presets.Commentary.lineHeight};
   color: ${colors.typeMain};
-  width: fit-content;
+  width: 100%;
   height: fit-content;
 
   
@@ -419,7 +419,7 @@ export const TimerBadge = styled.div`
 // Leaderboard card for big screen (left side)
 export const BigScreenLeaderboardCard = styled.div`
   background-color: ${colors.surface};
-  border-radius: 40px;
+  border-radius: 32px;
   padding: 2rem;
   width: 100%;
   display: flex;
@@ -440,6 +440,24 @@ export const LeaderboardScore = styled.span`
   font-size: ${typography.fontSize.lg};
 `;
 
+// Animated "+N" badge when a player gains points (shown after answer reveal)
+export const PointsGainBadge = styled.span`
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 0.25rem;
+  background: ${colors.green[500]};
+  color: ${colors.surface};
+  font-weight: ${typography.fontWeight.bold};
+  font-size: ${typography.fontSize.sm};
+  animation: pointsPop 0.5s ease-out;
+  @keyframes pointsPop {
+    0% { transform: scale(0); opacity: 0; }
+    50% { transform: scale(1.2); }
+    100% { transform: scale(1); opacity: 1; }
+  }
+`;
+
 // Body text for card content (matches theme body preset)
 export const BigScreenBodyText = styled.p`
   font-family: ${typography.presets.body.fontFamily};
@@ -453,7 +471,7 @@ export const BigScreenBodyText = styled.p`
 // Question content card (right side)
 export const BigScreenQuestionCard = styled(BigScreenCard)`
   flex: 1;
-  border-radius: 40px;
+  border-radius: 32px;
   background-color: ${colors.surface};
 `;
 
@@ -480,7 +498,7 @@ export const CreateGameLeftSection = styled(GamePlayStatus)`
 // Welcome card with cream/yellow background (Hi there! Create a room to get started.)
 export const CreateGameWelcomeCard = styled(TriviCommentaryCard)`
   background-color: ${colors.surface};
-  border-radius: 40px;
+  border-radius: 32px;
 
   @media (max-width: 400px) {
     flex-direction: column;
@@ -492,7 +510,7 @@ export const CreateGameWelcomeCard = styled(TriviCommentaryCard)`
 // CreateGameFormCard = white card inside right container (fills screen height when content is short)
 export const CreateGameFormCard = styled(BigScreenCard)`
   max-width: 32rem;
-  border-radius: 40px;
+  border-radius: 32px;
   margin: 0 auto;
   flex: 1;
   min-height: calc(100vh - 4rem);
@@ -526,4 +544,234 @@ export const CreateGameDurationText = styled.p`
 export const StartGameFormCard = styled(CreateGameFormCard)`
   max-width: 36rem;
   width: 100%;
+`;
+
+// --- Game Finished: two-column desktop, stacked mobile (mobile order: trivi → awards → leaderboard) ---
+
+/** Wrapper that hides the player header when layout is 2-column (desktop) so the game-finished view is full-bleed. */
+export const GameFinishedHeaderWrap = styled.div`
+  @media (min-width: 1024px) {
+    display: none;
+  }
+`;
+
+export const GameFinishedLayout = styled.div`
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+
+  @media (min-width: 1024px) {
+    display: grid;
+    grid-template-columns: 60% 1fr;
+    grid-template-rows: 1fr;
+    align-items: stretch;
+  }
+`;
+
+export const GameFinishedTriviSection = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.5rem 1rem 1rem 2rem;
+  overflow-y: auto;
+  width: 100%;
+
+  @media (max-width: 1023px) {
+    order: 1;
+  }
+
+  @media (min-width: 1024px) {
+    grid-column: 1;
+    grid-row: 1;
+    padding: 1.5rem 2rem;
+  }
+`;
+
+export const GameFinishedAwardsSection = styled.div`
+  display: flex;
+  flex-direction: column;
+  padding: 1rem;
+  overflow-y: auto;
+  width: 100%;
+  background-color: ${colors.bgContrast};
+
+  @media (max-width: 1023px) {
+    order: 2;
+  }
+
+  @media (min-width: 1024px) {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: stretch;
+    min-height: 100%;
+    padding: 2rem;
+    margin-right: 0;
+  }
+`;
+
+export const GameFinishedLeaderboardButtonSection = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+  overflow-y: auto;
+  width: 100%;
+
+  @media (max-width: 1023px) {
+    order: 3;
+  }
+
+  @media (min-width: 1024px) {
+    grid-column: 1;
+    grid-row: 2;
+    padding: 1rem 2rem;
+  }
+`;
+
+/** @deprecated Use GameFinishedTriviSection + GameFinishedLeaderboardButtonSection for mobile order. Kept for any other usage. */
+export const GameFinishedLeftColumn = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+  overflow-y: auto;
+  width: 100%;
+
+  @media (min-width: 1024px) {
+    width: 60%;
+    padding: 2rem;
+  }
+
+  @media (max-width: 1023px) {
+    order: 1;
+  }
+`;
+
+/** @deprecated Use GameFinishedAwardsSection for game-finished layout. */
+export const GameFinishedRightColumn = styled.div`
+  display: flex;
+  flex-direction: column;
+  padding: 1rem;
+  overflow-y: auto;
+  width: 100%;
+  background-color: ${colors.bgContrast};
+
+  @media (min-width: 1024px) {
+    width: 40%;
+    padding: 2rem;
+  }
+
+  @media (max-width: 1023px) {
+    order: 2;
+  }
+`;
+
+export const GameFinishedTitleImg = styled.img`
+  width: 100%;
+  max-width: 20rem;
+  margin-bottom: 1rem;
+  align-self: center;
+
+  @media (max-width: 1023px) {
+    display: none;
+  }
+`;
+
+export const GameFinishedTriviCard = styled.div`
+  background-color: ${colors.surface};
+  border-radius: 32px;
+  padding: 40px 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  text-align: center;
+`;
+
+export const GameFinishedStatsComment = styled.div`
+  font-family: ${typography.fontFamily.itim};
+  font-size: 24px;
+  font-weight: ${typography.fontWeight.medium};
+  line-height: ${typography.lineHeight.relaxed};
+  color: ${colors.typeMain};
+  width: 100%;
+  text-align: center;
+  margin: 0;
+`;
+
+export const GameFinishedAwardsSectionTitle = styled.h2`
+  font-family: ${typography.presets.h2.fontFamily};
+  font-size: ${typography.presets.h2.fontSize};
+  font-weight: ${typography.presets.h2.fontWeight};
+  line-height: ${typography.presets.h2.lineHeight};
+  color: ${colors.surface};
+  text-align: center;
+  margin: 0 0 1.5rem 0;
+`;
+
+export const GameFinishedAwardsGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  gap: 1rem;
+  width: 100%;
+
+  @media (max-width: 1023px) {
+    grid-template-columns: 1fr;
+  }
+`;
+
+export const GameFinishedAwardCard = styled.div`
+  background-color: ${colors.surface};
+  border: 1px solid ${colors.border};
+  border-radius: 16px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+
+  @media (min-width: 1024px) {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+`;
+
+export const GameFinishedAwardCardVertical = styled.div`
+  background-color: ${colors.surface};
+  border-radius: 32px;
+  padding: 32px 1.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.75rem;
+  border: 1px solid ${colors.border};
+`;
+
+export const GameFinishedAwardAvatars = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+`;
+
+export const GameFinishedAwardNames = styled.span`
+  font-family: ${typography.presets.body.fontFamily};
+  font-size: ${typography.fontSize.xs};
+  font-weight: ${typography.fontWeight.medium};
+  color: ${colors.typeSecondary};
+  flex: 1;
+  min-width: 0;
+`;
+
+export const GameFinishedAwardName = styled.span`
+  font-family: ${typography.presets.h3.fontFamily};
+  font-size: ${typography.fontSize.lg};
+  font-weight: ${typography.fontWeight.bold};
+  color: ${colors.typeMain};
+  line-height: ${typography.lineHeight.tight};
 `;

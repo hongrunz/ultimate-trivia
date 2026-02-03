@@ -33,6 +33,7 @@ import {
   BigScreenTopBar,
   TimerBadge,
   LeaderboardScore,
+  PointsGainBadge,
   BigScreenRightContainer,
   RoundStartLoadingSpinner,
   RoundStartLoadingText,
@@ -52,6 +53,9 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
   // Keep latest state in a ref so WebSocket handler always sees current state (avoids stale closure)
   const stateRef = useRef(state);
   stateRef.current = state;
+
+  // Points gained this question (for "+N" animation after answer reveal); key = playerId
+  const [pointsGained, setPointsGained] = useState<Record<string, number>>({});
 
   // Fallback: track which players have submitted for current question; transition when we've seen everyone (if backend never sends all_answers_submitted)
   const submittedForQuestionRef = useRef<Map<string, Set<string>>>(new Map());
@@ -101,18 +105,28 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     });
   }, []);
 
-  const fetchLeaderboard = useCallback(async () => {
+  const fetchLeaderboard = useCallback(async (options?: { trackPointsGain?: boolean }) => {
+    const prevLeaderboard = stateRef.current.context.leaderboard;
     try {
       const leaderboardData = await api.getLeaderboard(roomId);
-      
-      // Always fetch fresh room data to ensure player names are up to date
       const currentRoom = await api.getRoom(roomId);
       send({ type: 'ROOM_UPDATED', room: currentRoom });
-      
       const formattedLeaderboard = mapLeaderboardData(leaderboardData, currentRoom.players);
+      if (options?.trackPointsGain && prevLeaderboard.length > 0) {
+        const gains: Record<string, number> = {};
+        formattedLeaderboard.forEach((entry) => {
+          const prev = prevLeaderboard.find((e) => e.playerId === entry.playerId);
+          const prevPoints = prev?.points ?? 0;
+          const delta = entry.points - prevPoints;
+          if (delta > 0) gains[entry.playerId] = delta;
+        });
+        setPointsGained(gains);
+        setTimeout(() => setPointsGained({}), 4000);
+      }
       send({ type: 'LEADERBOARD_UPDATED', leaderboard: formattedLeaderboard });
     } catch {
       send({ type: 'LEADERBOARD_UPDATED', leaderboard: [] });
+      setPointsGained({});
     }
   }, [roomId, mapLeaderboardData, send]);
 
@@ -181,6 +195,34 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     }
   }, [state.value, state.context.room?.timePerQuestion, state.context.questionStartedAt, send]);
 
+  // Advance from submitted at server time (reviewStartedAt + 8s) so big screen and players stay in sync
+  const submittedEnteredAtRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (state.value !== 'submitted') {
+      submittedEnteredAtRef.current = null;
+      return;
+    }
+    if (submittedEnteredAtRef.current === null) {
+      submittedEnteredAtRef.current = Date.now();
+    }
+    const reviewStartedAt = state.context.reviewStartedAt;
+    const deadlineMs = reviewStartedAt
+      ? reviewStartedAt.getTime() + 8000
+      : submittedEnteredAtRef.current + 8000;
+    const check = () => {
+      if (Date.now() >= deadlineMs) {
+        send({ type: 'ADVANCE_AFTER_REVIEW' });
+        return true;
+      }
+      return false;
+    };
+    if (check()) return;
+    const interval = setInterval(() => {
+      if (check()) clearInterval(interval);
+    }, 100);
+    return () => clearInterval(interval);
+  }, [state.value, state.context.reviewStartedAt, send]);
+
   // Initial room fetch when roomId is available (params can be undefined on first paint)
   useEffect(() => {
     if (roomId) {
@@ -196,6 +238,16 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
       fetchLeaderboard();
     }
   }, [state.value, state.context.room, roomId, fetchLeaderboard]);
+
+  // Fetch leaderboard only when we enter answer-reveal (submitted) state; track points gained for animation
+  const prevStateRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const currentState = typeof state.value === 'string' ? state.value : undefined;
+    if (currentState === 'submitted' && prevStateRef.current !== 'submitted') {
+      fetchLeaderboard({ trackPointsGain: true });
+    }
+    prevStateRef.current = currentState;
+  }, [state.value, fetchLeaderboard]);
 
   // Read room/players from previous screen (Start Game) so we can show the list immediately
   useEffect(() => {
@@ -294,6 +346,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
   const handleWebSocketMessage = useCallback(async (message: {
     type: string;
     startedAt?: string;
+    reviewStartedAt?: string;
     currentRound?: number;
     questionId?: string;
     playerId?: string;
@@ -348,7 +401,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
           send({ type: 'ALL_ANSWERED' });
         }
       }
-      fetchLeaderboard();
+      // Do not fetch leaderboard here — only update after answer is revealed
       return;
     }
 
@@ -359,9 +412,16 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
       const messageQuestionId = message.questionId != null ? String(message.questionId) : '';
       const questionMatch = !messageQuestionId || !currentQuestionId || messageQuestionId === String(currentQuestionId);
       if (inQuestion && questionMatch) {
-        send({ type: 'ALL_ANSWERED' });
+        const reviewStartedAt =
+          typeof message.reviewStartedAt === 'string'
+            ? new Date(message.reviewStartedAt)
+            : undefined;
+        send({
+          type: 'ALL_ANSWERED',
+          ...(isNaN(reviewStartedAt?.getTime() ?? NaN) ? {} : { reviewStartedAt: reviewStartedAt! }),
+        });
       }
-      fetchLeaderboard();
+      // Leaderboard will be fetched when we enter 'submitted' (see effect below)
       return;
     }
 
@@ -757,8 +817,9 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
       <>
         <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
         <GameFinished
+          roomId={roomId}
           totalQuestions={state.context.room.questionsPerRound}
-          finalScore={0} // Big screen doesn't have a score
+          finalScore={0}
           leaderboard={state.context.leaderboard}
         />
       </>
@@ -814,21 +875,25 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
               <PlayerListContainer>
                 {state.context.leaderboard.length > 0 ? (
                   state.context.leaderboard.map((entry: LeaderboardEntry, index: number) => {
-                    // Assign unique avatars by position (1–10); wrap only when more than 10 players
                     const avatarCount = 10;
                     const avatarIndex = (index % avatarCount) + 1;
                     const avatarSrc = `/assets/avatars/avatar_${avatarIndex}.svg`;
-                    
+                    const gain = pointsGained[entry.playerId];
                     return (
                       <PlayerListItem key={entry.playerId}>
                         <PlayerListItemAvatar $avatarSrc={avatarSrc}>
                           {entry.playerName.charAt(0).toUpperCase()}
                         </PlayerListItemAvatar>
-                        <div style={{ flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.25rem' }}>
                           <PlayerListItemName>
                             #{entry.rank} {entry.playerName}
                           </PlayerListItemName>
-                          <LeaderboardScore>{entry.points}</LeaderboardScore>
+                          <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                            <LeaderboardScore>{entry.points}</LeaderboardScore>
+                            {gain != null && gain > 0 && (
+                              <PointsGainBadge>+{gain}</PointsGainBadge>
+                            )}
+                          </span>
                         </div>
                       </PlayerListItem>
                     );
@@ -862,18 +927,43 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
                 {currentQuestion.question}
               </BigScreenQuestionText>
 
-              {/* Options - only highlight correct answer and show explanation when in answer revelation (submitted) */}
+              {/* Options: during question show all; when answer revealed show only correct with label */}
               <BigScreenOptionsContainer>
-                {currentQuestion.options.map((option, index) => {
-                  const isAnswerRevelation = state.value === 'submitted';
-                  const isCorrect = index === currentQuestion.correctAnswer;
-                  return (
+                {state.value === 'submitted' ? (
+                  <>
+                    <p
+                      style={{
+                        width: '100%',
+                        margin: 0,
+                        marginBottom: '0.5rem',
+                        fontSize: '1.125rem',
+                        fontWeight: 600,
+                        color: colors.typeMain,
+                      }}
+                    >
+                      The correct answer is…
+                    </p>
+                    <BigScreenOptionButton
+                      disabled
+                      style={{
+                        backgroundColor: colors.green[500],
+                        color: colors.surface,
+                        cursor: 'default',
+                        textAlign: 'center',
+                        border: `1px solid ${colors.border}`,
+                      }}
+                    >
+                      {currentQuestion.options[currentQuestion.correctAnswer]}
+                    </BigScreenOptionButton>
+                  </>
+                ) : (
+                  currentQuestion.options.map((option, index) => (
                     <BigScreenOptionButton
                       key={index}
                       disabled
                       style={{
-                        backgroundColor: isAnswerRevelation && isCorrect ? colors.green[500] : colors.surface,
-                        color: isAnswerRevelation && isCorrect ? colors.surface : colors.typeMain,
+                        backgroundColor: colors.surface,
+                        color: colors.typeMain,
                         cursor: 'default',
                         textAlign: 'center',
                         border: `1px solid ${colors.border}`,
@@ -881,8 +971,8 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
                     >
                       {option}
                     </BigScreenOptionButton>
-                  );
-                })}
+                  ))
+                )}
               </BigScreenOptionsContainer>
 
               {/* Show explanation only when in answer revelation (all players have submitted) */}

@@ -16,6 +16,7 @@ import {
   GameSubmitButton,
 } from './styled/GameComponents';
 import { OptionsContainer, OptionButton } from './styled/OptionsContainer';
+import { MutedText } from './styled/StatusComponents';
 
 interface QuestionScreenProps {
   currentQuestion: number;
@@ -42,20 +43,25 @@ export default function QuestionScreen({
 }: QuestionScreenProps) {
   const [mounted, setMounted] = useState(false);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
+  const [answerSubmitted, setAnswerSubmitted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
   const handleOptionClick = (option: string) => {
+    if (answerSubmitted) return;
     setSelectedOption(option);
   };
 
   const handleSubmit = () => {
-    if (selectedOption !== null) {
+    if (selectedOption !== null && !answerSubmitted) {
+      setAnswerSubmitted(true);
       onSubmit(selectedOption);
     }
   };
+
+  const isDisabled = answerSubmitted;
 
   const safeOptions = options || [];
 
@@ -81,7 +87,7 @@ export default function QuestionScreen({
                   <OptionButton
                     key={index}
                     onClick={() => handleOptionClick(option)}
-                    disabled={false}
+                    disabled={isDisabled}
                     $selected={selectedOption === option}
                   >
                     {option}
@@ -92,10 +98,15 @@ export default function QuestionScreen({
             <GameSubmitButton
               type="button"
               onClick={handleSubmit}
-              disabled={selectedOption === null}
+              disabled={selectedOption === null || isDisabled}
             >
-              Submit
+              {answerSubmitted ? 'Submitted' : 'Submit'}
             </GameSubmitButton>
+            {answerSubmitted && (
+              <MutedText style={{ textAlign: 'center', marginTop: '1rem', display: 'block' }}>
+                Waiting for other players
+              </MutedText>
+            )}
           </GameCard>
         </PlayerGameCardWrapper>
       </GameScreenContent>

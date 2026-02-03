@@ -62,6 +62,11 @@ def _room_question_answered_key(room_id: UUID, question_id: str) -> str:
     return f"room:{room_id}:q:{question_id}:answered"
 
 
+def _room_questions_group_correct_key(room_id: UUID) -> str:
+    """Get Redis key for set of question IDs where at least one player answered correctly"""
+    return f"room:{room_id}:questions_group_correct"
+
+
 class RoomStore:
     """Store for room operations"""
 
@@ -497,3 +502,17 @@ class QuestionStore:
         effective_total = max(1, total_players)
         all_done = answered_count >= effective_total
         return all_done
+
+    @staticmethod
+    def record_question_group_correct(room_id: UUID, question_id: str) -> None:
+        """Record that at least one player answered this question correctly (for group correct rate)."""
+        r = get_redis_client()
+        key = _room_questions_group_correct_key(room_id)
+        r.sadd(key, question_id)
+
+    @staticmethod
+    def get_questions_group_correct_count(room_id: UUID) -> int:
+        """Return number of questions where at least one player was correct."""
+        r = get_redis_client()
+        key = _room_questions_group_correct_key(room_id)
+        return r.scard(key)

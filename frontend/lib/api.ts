@@ -79,6 +79,20 @@ export interface LeaderboardResponse {
   leaderboard: LeaderboardEntry[];
 }
 
+export interface GameStatsAward {
+  playerIds: string[];
+  playerNames: string[];
+  awardName: string;
+  topic?: string;
+}
+
+export interface GameStatsResponse {
+  groupCorrectRate: number;
+  totalQuestions: number;
+  triviComment: string;
+  awards: GameStatsAward[];
+}
+
 export interface SubmitAnswerRequest {
   questionId: string;
   answer: string;
@@ -159,6 +173,13 @@ export const api = {
    */
   async getLeaderboard(roomId: string): Promise<LeaderboardResponse> {
     return fetchAPI<LeaderboardResponse>(`/api/rooms/${roomId}/leaderboard`);
+  },
+
+  /**
+   * Get game stats and awards for game-over screen
+   */
+  async getGameStats(roomId: string): Promise<GameStatsResponse> {
+    return fetchAPI<GameStatsResponse>(`/api/rooms/${roomId}/game-stats`);
   },
 
   /**

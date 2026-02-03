@@ -16,7 +16,7 @@ export const PageContainer = styled.div`
 export const FormCard = styled.div`
   background-color: ${colors.surface};
   
-  border-radius: 40px;
+  border-radius: 32px;
   padding: 2rem;
   width: 100%;
   max-width: 28rem; /* max-w-md */
@@ -141,7 +141,8 @@ export const Button = styled.button`
 
 export const ButtonLarge = styled(Button)`
   padding: 0.75rem 2rem;
-  font-weight: ${typography.presets.buttonLarge.fontWeight};
+  font-weight: 500;
+  border-radius: 16px;
 `;
 
 export const ButtonPrimary = styled(Button)`

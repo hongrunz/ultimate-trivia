@@ -394,6 +394,7 @@ async def submit_answer(
         points = 100 if is_correct else 0
         if points > 0:
             updated_player = PlayerStore.update_player_score(player.player_id, points, question.topics)
+            QuestionStore.record_question_group_correct(room_uuid, request.questionId)
             current_score = updated_player.score
         else:
             current_score = player.score
@@ -587,6 +588,142 @@ async def submit_topic(
             totalPlayers=total_players
         )
     except ValueError as e:
+        raise HTTPException(status_code=400, detail="Invalid room ID")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Game stats & awards (for game-over screen) ---
+
+class GameStatsAward(BaseModel):
+    playerIds: list[str]
+    playerNames: list[str]
+    awardName: str
+    topic: Optional[str] = None
+
+
+class GameStatsResponse(BaseModel):
+    groupCorrectRate: int  # 0-100
+    totalQuestions: int
+    triviComment: str
+    awards: list[GameStatsAward]
+
+
+def _compute_game_stats_and_awards(room_uuid: UUID) -> GameStatsResponse:
+    """Compute group correct rate and awards from room + leaderboard."""
+    room = RoomStore.get_room(room_uuid)
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+
+    total_questions = room.num_rounds * room.questions_per_round
+    group_correct_count = QuestionStore.get_questions_group_correct_count(room_uuid)
+    group_correct_rate = round((group_correct_count / total_questions * 100)) if total_questions > 0 else 0
+    group_correct_rate = min(100, max(0, group_correct_rate))
+
+    trivi_comment = (
+        f"Your group nailed {group_correct_rate}% of all questions Trivi came up with. Nice team work!"
+    )
+
+    players = PlayerStore.get_leaderboard(room_uuid)
+    player_names = {str(p.player_id): p.player_name for p in players}
+    awards: list[GameStatsAward] = []
+
+    if not players:
+        return GameStatsResponse(
+            groupCorrectRate=group_correct_rate,
+            totalQuestions=total_questions,
+            triviComment=trivi_comment,
+            awards=[],
+        )
+
+    # Wildcard King: player(s) with highest total score
+    max_score = max(p.score if hasattr(p, "score") else 0 for p in players)
+    kings = [p for p in players if (p.score if hasattr(p, "score") else 0) == max_score]
+    if kings:
+        awards.append(
+            GameStatsAward(
+                playerIds=[str(p.player_id) for p in kings],
+                playerNames=[p.player_name for p in kings],
+                awardName="The Wildcard King",
+                topic=None,
+            )
+        )
+
+    # Category awards: at least one "topic expert" award (pick best per topic)
+    topic_titles = [
+        "Subject Matter authority on {topic}",
+        "Knowing the most about {topic}",
+        "The \"One-Man\" Encyclopedia on {topic}",
+    ]
+    topic_scores: dict = {}  # topic -> [(player, score), ...]
+    for p in players:
+        ts = getattr(p, "topic_score", None) or {}
+        for topic, score in ts.items():
+            if topic not in topic_scores:
+                topic_scores[topic] = []
+            topic_scores[topic].append((p, score))
+    for idx, (topic, lst) in enumerate(topic_scores.items()):
+        if not lst:
+            continue
+        best_score = max(s for _, s in lst)
+        winners = [pl for pl, s in lst if s == best_score and s > 0]
+        if not winners:
+            continue
+        title_template = topic_titles[idx % len(topic_titles)]
+        awards.append(
+            GameStatsAward(
+                playerIds=[str(p.player_id) for p in winners],
+                playerNames=[p.player_name for p in winners],
+                awardName=title_template.format(topic=topic),
+                topic=topic,
+            )
+        )
+
+    # Sharing a love for [topic]: pairs with similar topic score (if 3+ players)
+    if len(players) >= 3 and topic_scores:
+        for topic, lst in topic_scores.items():
+            if len(lst) < 2:
+                continue
+            lst_sorted = sorted(lst, key=lambda x: -x[1])
+            for i in range(len(lst_sorted)):
+                for j in range(i + 1, len(lst_sorted)):
+                    pi, si = lst_sorted[i]
+                    pj, sj = lst_sorted[j]
+                    if si > 0 and sj > 0 and abs(si - sj) <= 100:
+                        awards.append(
+                            GameStatsAward(
+                                playerIds=[str(pi.player_id), str(pj.player_id)],
+                                playerNames=[pi.player_name, pj.player_name],
+                                awardName=f"Sharing a love for {topic}",
+                                topic=topic,
+                            )
+                        )
+                        break
+                else:
+                    continue
+                break
+
+    # Cap awards: max 3 if <=3 players, else max 5
+    max_awards = 3 if len(players) <= 3 else 5
+    awards = awards[:max_awards]
+
+    return GameStatsResponse(
+        groupCorrectRate=group_correct_rate,
+        totalQuestions=total_questions,
+        triviComment=trivi_comment,
+        awards=awards,
+    )
+
+
+@router.get("/{room_id}/game-stats", response_model=GameStatsResponse)
+async def get_game_stats(room_id: str):
+    """Get game stats and awards for the game-over screen."""
+    try:
+        room_uuid = UUID(room_id)
+        return _compute_game_stats_and_awards(room_uuid)
+    except ValueError:
         raise HTTPException(status_code=400, detail="Invalid room ID")
     except HTTPException:
         raise
