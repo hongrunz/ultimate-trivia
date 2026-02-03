@@ -5,7 +5,7 @@ import { useMachine } from '@xstate/react';
 import GameFinished from './GameFinished';
 import BigScreenRoundFinished from './BigScreenRoundFinished';
 import BigScreenNewRound from './BigScreenNewRound';
-import { api, LeaderboardResponse, RoomResponse } from '../lib/api';
+import { api, tokenStorage, LeaderboardResponse, RoomResponse } from '../lib/api';
 import { useWebSocket } from '../lib/useWebSocket';
 import { useBackgroundMusic } from '../lib/useBackgroundMusic';
 import { useGameTimerDisplay } from '../lib/useGameTimerDisplay';
@@ -35,7 +35,10 @@ import {
   BigScreenTopBar,
   TimerBadge,
   LeaderboardScore,
+  PointsGainBadge,
   BigScreenRightContainer,
+  RoundStartLoadingSpinner,
+  RoundStartLoadingText,
 } from './styled/BigScreenComponents';
 import { BigScreenOptionButton } from './styled/OptionsContainer';
 import { MutedText } from './styled/StatusComponents';
@@ -53,12 +56,23 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
   const stateRef = useRef(state);
   stateRef.current = state;
 
+  // Points gained this question (for "+N" animation after answer reveal); key = playerId
+  const [pointsGained, setPointsGained] = useState<Record<string, number>>({});
+
   // Fallback: track which players have submitted for current question; transition when we've seen everyone (if backend never sends all_answers_submitted)
   const submittedForQuestionRef = useRef<Map<string, Set<string>>>(new Map());
   
   // Local state for topic submission tracking (not part of game state machine)
   const [topicSubmissionCount, setTopicSubmissionCount] = useState(0);
   const [collectedTopics, setCollectedTopics] = useState<string[]>([]);
+  // Load timeout: show error + retry if we're stuck in loading without room data
+  const [loadTimedOut, setLoadTimedOut] = useState(false);
+  // Start game error (e.g. Gemini API invalid) – from sessionStorage when display loads after failed start
+  const [startGameError, setStartGameError] = useState<string | null>(null);
+  // Questions wait timeout: still no questions after 60s (e.g. start failed silently or server slow)
+  const [questionsWaitTimedOut, setQuestionsWaitTimedOut] = useState(false);
+  // Room/players from previous screen (Start Game) so we can show the list immediately while loading
+  const [initialRoomFromStorage, setInitialRoomFromStorage] = useState<RoomResponse | null>(null);
 
   // Helper function to map leaderboard data to UI format
   const mapLeaderboardData = useCallback((
@@ -93,29 +107,43 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     });
   }, []);
 
-  const fetchLeaderboard = useCallback(async () => {
+  const fetchLeaderboard = useCallback(async (options?: { trackPointsGain?: boolean }) => {
+    const prevLeaderboard = stateRef.current.context.leaderboard;
     try {
       const leaderboardData = await api.getLeaderboard(roomId);
-      
-      // Always fetch fresh room data to ensure player names are up to date
       const currentRoom = await api.getRoom(roomId);
       send({ type: 'ROOM_UPDATED', room: currentRoom });
-      
       const formattedLeaderboard = mapLeaderboardData(leaderboardData, currentRoom.players);
+      if (options?.trackPointsGain && prevLeaderboard.length > 0) {
+        const gains: Record<string, number> = {};
+        formattedLeaderboard.forEach((entry) => {
+          const prev = prevLeaderboard.find((e) => e.playerId === entry.playerId);
+          const prevPoints = prev?.points ?? 0;
+          const delta = entry.points - prevPoints;
+          if (delta > 0) gains[entry.playerId] = delta;
+        });
+        setPointsGained(gains);
+        setTimeout(() => setPointsGained({}), 4000);
+      }
       send({ type: 'LEADERBOARD_UPDATED', leaderboard: formattedLeaderboard });
     } catch {
       send({ type: 'LEADERBOARD_UPDATED', leaderboard: [] });
+      setPointsGained({});
     }
   }, [roomId, mapLeaderboardData, send]);
 
   const fetchRoom = useCallback(async () => {
+    if (!roomId) {
+      send({ type: 'ERROR', error: 'Invalid room. Please use the link from the host.' });
+      return;
+    }
     try {
       const roomData = await api.getRoom(roomId);
 
       // Always try to fetch leaderboard, even if game hasn't started
       fetchLeaderboard();
 
-      if (roomData.status === 'started' && roomData.questions) {
+      if (roomData.status === 'started' && roomData.questions?.length) {
         // Parse and set game start timestamp for timer synchronization
         if (roomData.startedAt) {
           const startTime = new Date(roomData.startedAt);
@@ -169,11 +197,144 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     }
   }, [state.value, state.context.room?.timePerQuestion, state.context.questionStartedAt, send]);
 
-  // Initial room fetch
+  // Advance from submitted at server time (reviewStartedAt + 8s) so big screen and players stay in sync
+  const submittedEnteredAtRef = useRef<number | null>(null);
   useEffect(() => {
-    fetchRoom();
+    if (state.value !== 'submitted') {
+      submittedEnteredAtRef.current = null;
+      return;
+    }
+    if (submittedEnteredAtRef.current === null) {
+      submittedEnteredAtRef.current = Date.now();
+    }
+    const reviewStartedAt = state.context.reviewStartedAt;
+    const deadlineMs = reviewStartedAt
+      ? reviewStartedAt.getTime() + 8000
+      : submittedEnteredAtRef.current + 8000;
+    const check = () => {
+      if (Date.now() >= deadlineMs) {
+        send({ type: 'ADVANCE_AFTER_REVIEW' });
+        return true;
+      }
+      return false;
+    };
+    if (check()) return;
+    const interval = setInterval(() => {
+      if (check()) clearInterval(interval);
+    }, 100);
+    return () => clearInterval(interval);
+  }, [state.value, state.context.reviewStartedAt, send]);
+
+  // Initial room fetch when roomId is available (params can be undefined on first paint)
+  useEffect(() => {
+    if (roomId) {
+      setLoadTimedOut(false);
+      fetchRoom();
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [roomId]);
+
+  // When stuck in initial loading (no room yet), also fetch leaderboard so we get room + list sooner
+  useEffect(() => {
+    if (state.value === 'loading' && !state.context.room && roomId) {
+      fetchLeaderboard();
+    }
+  }, [state.value, state.context.room, roomId, fetchLeaderboard]);
+
+  // Fetch leaderboard only when we enter answer-reveal (submitted) state; track points gained for animation
+  const prevStateRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const currentState = typeof state.value === 'string' ? state.value : undefined;
+    if (currentState === 'submitted' && prevStateRef.current !== 'submitted') {
+      fetchLeaderboard({ trackPointsGain: true });
+    }
+    prevStateRef.current = currentState;
+  }, [state.value, fetchLeaderboard]);
+
+  // Read room/players from previous screen (Start Game) so we can show the list immediately
+  useEffect(() => {
+    if (!roomId) return;
+    try {
+      const raw = sessionStorage.getItem('displayInitialRoom');
+      if (!raw) return;
+      const { roomId: storedRoomId, room } = JSON.parse(raw) as { roomId: string; room: RoomResponse };
+      if (storedRoomId === roomId && room?.players) {
+        setInitialRoomFromStorage(room);
+      }
+    } catch {
+      // ignore
+    }
+  }, [roomId]);
+
+  // Clear stored initial room once we have real room data
+  useEffect(() => {
+    if (state.context.room) {
+      try {
+        sessionStorage.removeItem('displayInitialRoom');
+      } catch {
+        // ignore
+      }
+      setInitialRoomFromStorage(null);
+    }
+  }, [state.context.room]);
+
+  // Timeout: if we're still loading with no room after 30s, show error + retry
+  useEffect(() => {
+    if (state.value !== 'loading' || state.context.room || !roomId) return;
+    const t = setTimeout(() => setLoadTimedOut(true), 30000);
+    return () => clearTimeout(t);
+  }, [state.value, state.context.room, roomId]);
+
+  // When load times out, read sessionStorage for startGameError (e.g. Gemini failed before we got room)
+  useEffect(() => {
+    if (!loadTimedOut || !roomId) return;
+    try {
+      const raw = sessionStorage.getItem('startGameError');
+      if (!raw) return;
+      const { roomId: storedRoomId, message } = JSON.parse(raw) as { roomId: string; message: string };
+      if (storedRoomId === roomId) {
+        setStartGameError(message);
+        sessionStorage.removeItem('startGameError');
+      }
+    } catch {
+      sessionStorage.removeItem('startGameError');
+    }
+  }, [loadTimedOut, roomId]);
+
+  // Poll for questions while showing RoundStartWaiting (host clicked Start, backend generating)
+  useEffect(() => {
+    if (!state.context.room || state.context.room.questions?.length) return;
+    const interval = setInterval(() => {
+      fetchRoom();
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [state.context.room?.roomId, state.context.room?.questions?.length, fetchRoom]);
+
+  // Read startGameError from sessionStorage when we're waiting for questions (e.g. Gemini API failed)
+  useEffect(() => {
+    const room = state.context.room;
+    if (!room || room.questions?.length) return;
+    try {
+      const raw = sessionStorage.getItem('startGameError');
+      if (!raw) return;
+      const { roomId: storedRoomId, message } = JSON.parse(raw) as { roomId: string; message: string };
+      if (storedRoomId === roomId) {
+        setStartGameError(message);
+        sessionStorage.removeItem('startGameError');
+      }
+    } catch {
+      sessionStorage.removeItem('startGameError');
+    }
+  }, [roomId, state.context.room?.roomId, state.context.room?.questions?.length]);
+
+  // Timeout: still no questions after 60s (e.g. Gemini API invalid, server misconfigured)
+  useEffect(() => {
+    const room = state.context.room;
+    if (!room || room.questions?.length) return;
+    setQuestionsWaitTimedOut(false);
+    const t = setTimeout(() => setQuestionsWaitTimedOut(true), 60000);
+    return () => clearTimeout(t);
+  }, [roomId, state.context.room?.roomId, state.context.room?.questions?.length]);
 
   // Reset collected topics when entering newRound state
   useEffect(() => {
@@ -187,6 +348,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
   const handleWebSocketMessage = useCallback(async (message: {
     type: string;
     startedAt?: string;
+    reviewStartedAt?: string;
     currentRound?: number;
     questionId?: string;
     playerId?: string;
@@ -241,7 +403,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
           send({ type: 'ALL_ANSWERED' });
         }
       }
-      fetchLeaderboard();
+      // Do not fetch leaderboard here — only update after answer is revealed
       return;
     }
 
@@ -252,9 +414,16 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
       const messageQuestionId = message.questionId != null ? String(message.questionId) : '';
       const questionMatch = !messageQuestionId || !currentQuestionId || messageQuestionId === String(currentQuestionId);
       if (inQuestion && questionMatch) {
-        send({ type: 'ALL_ANSWERED' });
+        const reviewStartedAt =
+          typeof message.reviewStartedAt === 'string'
+            ? new Date(message.reviewStartedAt)
+            : undefined;
+        send({
+          type: 'ALL_ANSWERED',
+          ...(isNaN(reviewStartedAt?.getTime() ?? NaN) ? {} : { reviewStartedAt: reviewStartedAt! }),
+        });
       }
-      fetchLeaderboard();
+      // Leaderboard will be fetched when we enter 'submitted' (see effect below)
       return;
     }
 
@@ -289,6 +458,24 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     }
   }, [fetchRoom, fetchLeaderboard, roomId, send]);
 
+  const handleRetryStartGame = useCallback(() => {
+    setStartGameError(null);
+    setQuestionsWaitTimedOut(false);
+    try {
+      sessionStorage.removeItem('startGameError');
+    } catch {
+      // ignore
+    }
+    const hostToken = roomId ? tokenStorage.getHostToken(roomId) : null;
+    if (roomId && hostToken) {
+      api.startGame(roomId, hostToken).then(() => fetchRoom()).catch((err) => {
+        setStartGameError(err instanceof Error ? err.message : 'Failed to start game');
+      });
+    } else {
+      fetchRoom();
+    }
+  }, [roomId, fetchRoom]);
+
   // WebSocket connection
   useWebSocket(roomId, {
     onMessage: handleWebSocketMessage,
@@ -316,8 +503,8 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     timer,
   });
 
-  // Loading state
-  if (state.value === 'loading') {
+  // Invalid room: no roomId (e.g. wrong URL)
+  if (!roomId) {
     return (
       <>
         <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
@@ -330,8 +517,140 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
         />
         <BigScreenContainer>
           <BigScreenCard>
-            <GameTitle>Loading game...</GameTitle>
+            <ErrorTitle>Invalid room</ErrorTitle>
+            <MutedText style={{ marginTop: '1rem', textAlign: 'center' }}>
+              Please use the link from the host to join the display.
+            </MutedText>
           </BigScreenCard>
+        </BigScreenContainer>
+      </>
+    );
+  }
+
+  // Loading state: no room data yet (same layout as RoundStartWaiting for consistent UX)
+  const isLoadingNoRoom = state.value === 'loading' && !state.context.room;
+  if (isLoadingNoRoom) {
+    // Timed out: show error + retry (show startGameError from sessionStorage if present, e.g. Gemini API)
+    if (loadTimedOut) {
+      const loadErrorTitle = startGameError ? "Couldn't start the game" : "Couldn't connect";
+      const loadErrorBody = startGameError
+        ? "The server couldn't generate questions. Check the message on the right."
+        : "Check that the room link is correct and the host has started the game.";
+      return (
+        <>
+          <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
+          <BigScreenContainer>
+            <BigScreenLayout>
+              <GamePlayStatus>
+                <BigScreenGameTitle>
+                  <GameTitleImage src="/assets/game_title.svg" alt="Wildcard Trivia" />
+                </BigScreenGameTitle>
+                <TriviCommentaryCard>
+                  <TriviCommentaryCharacterContainer>
+                    <img src="/assets/Trivi_big_smile.svg" alt="Trivi character" />
+                  </TriviCommentaryCharacterContainer>
+                  <TriviCommentaryTextContainer>
+                    <TriviCommentaryTitle>{loadErrorTitle}</TriviCommentaryTitle>
+                    <TriviCommentaryBody>
+                      {loadErrorBody}
+                    </TriviCommentaryBody>
+                  </TriviCommentaryTextContainer>
+                </TriviCommentaryCard>
+                <BigScreenLeaderboardCard>
+                  <PlayerListTitle>Players</PlayerListTitle>
+                  <PlayerListContainer>
+                    <MutedText style={{ textAlign: 'center', padding: '2rem 0' }}>—</MutedText>
+                  </PlayerListContainer>
+                </BigScreenLeaderboardCard>
+              </GamePlayStatus>
+              <BigScreenRightContainer style={{ justifyContent: 'center', gap: '1.5rem', padding: '2rem' }}>
+                <RoundStartLoadingText style={{ color: colors.surface, textAlign: 'center', maxWidth: '28rem' }}>
+                  {startGameError ?? 'Try again'}
+                </RoundStartLoadingText>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoadTimedOut(false);
+                    setStartGameError(null);
+                    fetchRoom();
+                  }}
+                  style={{
+                    padding: '0.75rem 1.5rem',
+                    fontSize: '1.125rem',
+                    fontWeight: 600,
+                    color: colors.primary,
+                    backgroundColor: colors.surface,
+                    border: 'none',
+                    borderRadius: '12px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Retry
+                </button>
+              </BigScreenRightContainer>
+            </BigScreenLayout>
+          </BigScreenContainer>
+        </>
+      );
+    }
+    return (
+      <>
+        <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
+        <BigScreenContainer>
+          <BigScreenLayout>
+            <GamePlayStatus>
+              <BigScreenGameTitle>
+                <GameTitleImage src="/assets/game_title.svg" alt="Wildcard Trivia" />
+              </BigScreenGameTitle>
+
+              <TriviCommentaryCard>
+                <TriviCommentaryCharacterContainer>
+                  <img src="/assets/Trivi_big_smile.svg" alt="Trivi character" />
+                </TriviCommentaryCharacterContainer>
+                <TriviCommentaryTextContainer>
+                  <TriviCommentaryTitle>On it!</TriviCommentaryTitle>
+                  <TriviCommentaryBody>
+                    Working on getting your questions ready...
+                  </TriviCommentaryBody>
+                </TriviCommentaryTextContainer>
+              </TriviCommentaryCard>
+
+              <BigScreenLeaderboardCard>
+                <PlayerListTitle>Leaderboard</PlayerListTitle>
+                <PlayerListContainer>
+                  {initialRoomFromStorage?.players?.length ? (
+                    initialRoomFromStorage.players.map((player, index) => {
+                      const avatarCount = 10;
+                      const avatarIndex = (index % avatarCount) + 1;
+                      const avatarSrc = `/assets/avatars/avatar_${avatarIndex}.svg`;
+                      return (
+                        <PlayerListItem key={player.playerId}>
+                          <PlayerListItemAvatar $avatarSrc={avatarSrc}>
+                            {player.playerName.charAt(0).toUpperCase()}
+                          </PlayerListItemAvatar>
+                          <div style={{ flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <PlayerListItemName>
+                              #{index + 1} {player.playerName}
+                            </PlayerListItemName>
+                            <LeaderboardScore>0</LeaderboardScore>
+                          </div>
+                        </PlayerListItem>
+                      );
+                    })
+                  ) : (
+                    <MutedText style={{ textAlign: 'center', padding: '2rem 0' }}>
+                      Loading...
+                    </MutedText>
+                  )}
+                </PlayerListContainer>
+              </BigScreenLeaderboardCard>
+            </GamePlayStatus>
+
+            <BigScreenRightContainer style={{ justifyContent: 'center' }}>
+              <RoundStartLoadingSpinner />
+              <RoundStartLoadingText>Loading...</RoundStartLoadingText>
+            </BigScreenRightContainer>
+          </BigScreenLayout>
         </BigScreenContainer>
       </>
     );
@@ -358,8 +677,11 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     );
   }
 
-  // Waiting for game to start
-  if (!state.context.room?.questions?.length) {
+  // Round start waiting: room exists but questions not ready yet (same layout as gameplay, right = loading or error)
+  const roomWaitingForQuestions = state.context.room && !state.context.room.questions?.length ? state.context.room : null;
+  const showQuestionsError = roomWaitingForQuestions && (startGameError || questionsWaitTimedOut);
+
+  if (roomWaitingForQuestions) {
     return (
       <>
         <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
@@ -371,9 +693,111 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
           onVoiceSelect={setVoice}
         />
         <BigScreenContainer>
-          <BigScreenCard>
-            <GameTitle>Waiting for game to start...</GameTitle>
-          </BigScreenCard>
+          <BigScreenLayout>
+            <GamePlayStatus>
+              <BigScreenGameTitle>
+                <GameTitleImage src="/assets/game_title.svg" alt="Wildcard Trivia" />
+              </BigScreenGameTitle>
+
+              <TriviCommentaryCard>
+                <TriviCommentaryCharacterContainer>
+                  <img src="/assets/Trivi_big_smile.svg" alt="Trivi character" />
+                </TriviCommentaryCharacterContainer>
+                <TriviCommentaryTextContainer>
+                  <TriviCommentaryTitle>
+                    {showQuestionsError ? "Something went wrong" : "On it!"}
+                  </TriviCommentaryTitle>
+                  <TriviCommentaryBody>
+                    {showQuestionsError
+                      ? (startGameError
+                        ? "The server couldn't start the game. Check the message on the right and try again."
+                        : "Questions are taking too long. The server may need a valid Gemini API key (backend/.env).")
+                      : "Working on getting your questions ready..."}
+                  </TriviCommentaryBody>
+                </TriviCommentaryTextContainer>
+              </TriviCommentaryCard>
+
+              <BigScreenLeaderboardCard>
+                <PlayerListTitle>Leaderboard</PlayerListTitle>
+                <PlayerListContainer>
+                  {state.context.leaderboard.length > 0 ? (
+                    state.context.leaderboard.map((entry: LeaderboardEntry, index: number) => {
+                      const avatarCount = 10;
+                      const avatarIndex = (index % avatarCount) + 1;
+                      const avatarSrc = `/assets/avatars/avatar_${avatarIndex}.svg`;
+                      return (
+                        <PlayerListItem key={entry.playerId}>
+                          <PlayerListItemAvatar $avatarSrc={avatarSrc}>
+                            {entry.playerName.charAt(0).toUpperCase()}
+                          </PlayerListItemAvatar>
+                          <div style={{ flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <PlayerListItemName>
+                              #{entry.rank} {entry.playerName}
+                            </PlayerListItemName>
+                            <LeaderboardScore>{entry.points}</LeaderboardScore>
+                          </div>
+                        </PlayerListItem>
+                      );
+                    })
+                  ) : roomWaitingForQuestions.players.length > 0 ? (
+                    roomWaitingForQuestions.players.map((player, index) => {
+                      const avatarCount = 10;
+                      const avatarIndex = (index % avatarCount) + 1;
+                      const avatarSrc = `/assets/avatars/avatar_${avatarIndex}.svg`;
+                      return (
+                        <PlayerListItem key={player.playerId}>
+                          <PlayerListItemAvatar $avatarSrc={avatarSrc}>
+                            {player.playerName.charAt(0).toUpperCase()}
+                          </PlayerListItemAvatar>
+                          <div style={{ flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <PlayerListItemName>
+                              #{index + 1} {player.playerName}
+                            </PlayerListItemName>
+                            <LeaderboardScore>0</LeaderboardScore>
+                          </div>
+                        </PlayerListItem>
+                      );
+                    })
+                  ) : (
+                    <MutedText style={{ textAlign: 'center', padding: '2rem 0' }}>
+                      No players yet
+                    </MutedText>
+                  )}
+                </PlayerListContainer>
+              </BigScreenLeaderboardCard>
+            </GamePlayStatus>
+
+            <BigScreenRightContainer style={{ justifyContent: 'center', gap: '1.5rem', padding: '2rem' }}>
+              {showQuestionsError ? (
+                <>
+                  <RoundStartLoadingText style={{ color: colors.surface, textAlign: 'center', maxWidth: '28rem' }}>
+                    {startGameError ?? 'Questions are taking too long. The server may need a valid Gemini API key.'}
+                  </RoundStartLoadingText>
+                  <button
+                    type="button"
+                    onClick={handleRetryStartGame}
+                    style={{
+                      padding: '0.75rem 1.5rem',
+                      fontSize: '1.125rem',
+                      fontWeight: 600,
+                      color: colors.primary,
+                      backgroundColor: colors.surface,
+                      border: 'none',
+                      borderRadius: '12px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Retry
+                  </button>
+                </>
+              ) : (
+                <>
+                  <RoundStartLoadingSpinner />
+                  <RoundStartLoadingText>Loading...</RoundStartLoadingText>
+                </>
+              )}
+            </BigScreenRightContainer>
+          </BigScreenLayout>
         </BigScreenContainer>
       </>
     );
@@ -401,7 +825,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
   }
 
   // Round finished state (show between rounds)
-  if (state.value === 'roundFinished') {
+  if (state.value === 'roundFinished' && state.context.room) {
     return (
       <>
         <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
@@ -423,7 +847,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
   }
 
   // New round topic submission state
-  if (state.value === 'newRound') {
+  if (state.value === 'newRound' && state.context.room) {
     return (
       <>
         <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
@@ -447,7 +871,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
   }
 
   // Game finished state
-  if (state.value === 'finished') {
+  if (state.value === 'finished' && state.context.room) {
     return (
       <>
         <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
@@ -459,18 +883,20 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
           onVoiceSelect={setVoice}
         />
         <GameFinished
+          roomId={roomId}
           totalQuestions={state.context.room.questionsPerRound}
-          finalScore={0} // Big screen doesn't have a score
+          finalScore={0}
           leaderboard={state.context.leaderboard}
         />
       </>
     );
   }
 
-  const currentQuestion = state.context.room.questions[currentQuestionIndex];
-  
+  const room = state.context.room;
+  const currentQuestion = room?.questions?.[currentQuestionIndex];
+
   // Question loading state
-  if (!currentQuestion) {
+  if (!room || !currentQuestion) {
     return (
       <>
         <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
@@ -522,21 +948,25 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
               <PlayerListContainer>
                 {state.context.leaderboard.length > 0 ? (
                   state.context.leaderboard.map((entry: LeaderboardEntry, index: number) => {
-                    // Assign unique avatars by position (1–10); wrap only when more than 10 players
                     const avatarCount = 10;
                     const avatarIndex = (index % avatarCount) + 1;
                     const avatarSrc = `/assets/avatars/avatar_${avatarIndex}.svg`;
-                    
+                    const gain = pointsGained[entry.playerId];
                     return (
                       <PlayerListItem key={entry.playerId}>
                         <PlayerListItemAvatar $avatarSrc={avatarSrc}>
                           {entry.playerName.charAt(0).toUpperCase()}
                         </PlayerListItemAvatar>
-                        <div style={{ flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.25rem' }}>
                           <PlayerListItemName>
                             #{entry.rank} {entry.playerName}
                           </PlayerListItemName>
-                          <LeaderboardScore>{entry.points}</LeaderboardScore>
+                          <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                            <LeaderboardScore>{entry.points}</LeaderboardScore>
+                            {gain != null && gain > 0 && (
+                              <PointsGainBadge>+{gain}</PointsGainBadge>
+                            )}
+                          </span>
                         </div>
                       </PlayerListItem>
                     );
@@ -554,7 +984,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
           <BigScreenRightContainer>
             {/* Top bar with round and timer */}
             <BigScreenTopBar>
-              <span>Round {state.context.room.currentRound} of {state.context.room.numRounds}</span>
+              <span>Round {room.currentRound} of {room.numRounds}</span>
               <TimerBadge>{timer !== undefined ? `${timer}s` : '--'}</TimerBadge>
             </BigScreenTopBar>
 
@@ -562,7 +992,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
             <BigScreenQuestionCard>
               {/* Question progress */}
               <QuestionProgress>
-                Question {currentQuestionIndex + 1}/{state.context.room.questionsPerRound}
+                Question {currentQuestionIndex + 1}/{room.questionsPerRound}
               </QuestionProgress>
 
               {/* Question text */}
@@ -570,18 +1000,43 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
                 {currentQuestion.question}
               </BigScreenQuestionText>
 
-              {/* Options - only highlight correct answer and show explanation when in answer revelation (submitted) */}
+              {/* Options: during question show all; when answer revealed show only correct with label */}
               <BigScreenOptionsContainer>
-                {currentQuestion.options.map((option, index) => {
-                  const isAnswerRevelation = state.value === 'submitted';
-                  const isCorrect = index === currentQuestion.correctAnswer;
-                  return (
+                {state.value === 'submitted' ? (
+                  <>
+                    <p
+                      style={{
+                        width: '100%',
+                        margin: 0,
+                        marginBottom: '0.5rem',
+                        fontSize: '1.125rem',
+                        fontWeight: 600,
+                        color: colors.typeMain,
+                      }}
+                    >
+                      The correct answer is…
+                    </p>
+                    <BigScreenOptionButton
+                      disabled
+                      style={{
+                        backgroundColor: colors.green[500],
+                        color: colors.surface,
+                        cursor: 'default',
+                        textAlign: 'center',
+                        border: `1px solid ${colors.border}`,
+                      }}
+                    >
+                      {currentQuestion.options[currentQuestion.correctAnswer]}
+                    </BigScreenOptionButton>
+                  </>
+                ) : (
+                  currentQuestion.options.map((option, index) => (
                     <BigScreenOptionButton
                       key={index}
                       disabled
                       style={{
-                        backgroundColor: isAnswerRevelation && isCorrect ? colors.green[500] : colors.surface,
-                        color: isAnswerRevelation && isCorrect ? colors.surface : colors.typeMain,
+                        backgroundColor: colors.surface,
+                        color: colors.typeMain,
                         cursor: 'default',
                         textAlign: 'center',
                         border: `1px solid ${colors.border}`,
@@ -589,8 +1044,8 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
                     >
                       {option}
                     </BigScreenOptionButton>
-                  );
-                })}
+                  ))
+                )}
               </BigScreenOptionsContainer>
 
               {/* Show explanation only when in answer revelation (all players have submitted) */}

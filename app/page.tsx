@@ -1,5 +1,5 @@
-import CreateGame from '../frontend/components/CreateGame';
+import Onboarding from '../frontend/components/Onboarding';
 
 export default function Home() {
-  return <CreateGame />;
+  return <Onboarding />;
 }

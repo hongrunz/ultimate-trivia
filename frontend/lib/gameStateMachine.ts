@@ -40,7 +40,8 @@ export type GameEvent =
   | { type: 'ROUND_CHANGED'; startedAt: Date; room: RoomResponse }
   | { type: 'LEADERBOARD_UPDATED'; leaderboard: LeaderboardEntry[] }
   | { type: 'PLAYER_JOINED'; player: { playerId: string; playerName: string; joinedAt: string } }
-  | { type: 'ALL_ANSWERED' }
+  | { type: 'ALL_ANSWERED'; reviewStartedAt?: Date }
+  | { type: 'ADVANCE_AFTER_REVIEW' }
   | { type: 'ERROR'; error: string };
 
 export const gameStateMachine = setup({
@@ -133,12 +134,12 @@ export const gameStateMachine = setup({
     },
 
     question: {
-      // Reset isCorrect, reviewStartedAt, selectedAnswer, and set when this question started so timer resets per question
+      // Reset isCorrect, reviewStartedAt, selectedAnswer. questionStartedAt set by entry or by transition from submitted (server-synced)
       entry: assign({
         isCorrect: () => false,
         reviewStartedAt: () => null,
         selectedAnswer: () => null,
-        questionStartedAt: () => new Date(),
+        questionStartedAt: ({ context }) => context.questionStartedAt ?? new Date(),
       }),
       on: {
         ANSWER_SUBMITTED: {
@@ -159,7 +160,10 @@ export const gameStateMachine = setup({
           target: 'submitted',
           actions: assign({
             isCorrect: ({ context }) => context.isCorrect,
-            reviewStartedAt: () => new Date(),
+            reviewStartedAt: ({ event }) => {
+              const ev = event as Extract<GameEvent, { type: 'ALL_ANSWERED' }>;
+              return ev.reviewStartedAt ?? new Date();
+            },
           }),
         },
         ROOM_UPDATED: {
@@ -175,17 +179,12 @@ export const gameStateMachine = setup({
     },
 
     submitted: {
-      // Review time: 8 seconds to show answer and leaderboard
-      // After 8 seconds, check if we've completed all questions in the round
-      // If currentQuestionIndex + 1 >= questionsPerRound, send ROUND_FINISHED
-      // Otherwise, transition to next question
-      after: {
-        8000: [
+      // Advance is driven by components at reviewStartedAt+8s (server-synced) or 8s after enter (timer-expired path)
+      on: {
+        ADVANCE_AFTER_REVIEW: [
           {
             target: 'roundFinished',
             guard: ({ context }: { context: GameContext }) => {
-              // Check if the next question would exceed questionsPerRound
-              // (currentQuestionIndex is 0-indexed, so we check if next index >= questionsPerRound)
               const questionsPerRound = context.room?.questionsPerRound ?? 0;
               return context.currentQuestionIndex + 1 >= questionsPerRound;
             },
@@ -197,11 +196,13 @@ export const gameStateMachine = setup({
             target: 'question',
             actions: assign({
               currentQuestionIndex: ({ context }) => context.currentQuestionIndex + 1,
+              questionStartedAt: ({ context }) =>
+                context.reviewStartedAt
+                  ? new Date(context.reviewStartedAt.getTime() + 8000)
+                  : new Date(),
             }),
           },
         ],
-      },
-      on: {
         // Player submitted after we already transitioned via ALL_ANSWERED (e.g. they were the last to submit).
         // Update context so the reveal screen shows their selected answer.
         ANSWER_SUBMITTED: {
@@ -280,6 +281,8 @@ export const gameStateMachine = setup({
             gameStartedAt: ({ event }) => (event as Extract<GameEvent, { type: 'ROUND_CHANGED' }>).startedAt,
             room: ({ event }) => (event as Extract<GameEvent, { type: 'ROUND_CHANGED' }>).room,
             currentQuestionIndex: () => 0, // Reset question index for new round
+            // Start question timer when we actually show the new round's first question (not when server sent round_changed)
+            questionStartedAt: () => new Date(),
           }),
         },
         ROOM_UPDATED: {

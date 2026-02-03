@@ -9,23 +9,17 @@ import {
   GameHeader,
   GameHeaderRow,
   CircularBadge,
-  LeaderboardSection,
-  LeaderboardHeading,
-  LeaderboardList,
-  LeaderboardItem,
   QuestionText,
   RevealedOptionRow,
   GameTimerBadge,
   GameRoundLabel,
+  PlayerListContainer,
+  PlayerListItem,
+  PlayerListItemAvatar,
+  PlayerListItemName,
 } from './styled/GameComponents';
+import { LeaderboardScore, PointsGainBadge } from './styled/BigScreenComponents';
 import { OptionsContainer } from './styled/OptionsContainer';
-
-interface LeaderboardEntry {
-  playerId: string;
-  rank: number;
-  playerName: string;
-  points: number;
-}
 
 interface SubmittedScreenProps {
   currentQuestion: number;
@@ -38,7 +32,8 @@ interface SubmittedScreenProps {
   correctAnswerIndex: number;
   selectedAnswer: string | null;
   explanation: string;
-  leaderboard: LeaderboardEntry[];
+  leaderboard: { playerId: string; rank: number; playerName: string; points: number }[];
+  pointsGained?: Record<string, number>;
   timer?: number;
 }
 
@@ -70,6 +65,7 @@ export default function SubmittedScreen({
   selectedAnswer,
   explanation,
   leaderboard,
+  pointsGained = {},
   timer,
 }: SubmittedScreenProps) {
   const safeOptions = options ?? [];
@@ -79,6 +75,8 @@ export default function SubmittedScreen({
   const normalize = (s: string) => String(s ?? '').trim().toLowerCase();
 
   const feedbackMessage = isCorrect ? 'You are correct!!' : "Oops! That's incorrect.";
+
+  const avatarCount = 10;
 
   return (
     <GameScreenContainer>
@@ -118,16 +116,39 @@ export default function SubmittedScreen({
         {explanation && (
           <Text style={{ marginTop: '1rem' }}><strong>Explanation:</strong> {explanation}</Text>
         )}
-        <LeaderboardSection>
-          <LeaderboardHeading>Leader board:</LeaderboardHeading>
-          <LeaderboardList>
-            {leaderboard.map((entry) => (
-              <LeaderboardItem key={entry.playerId}>
-                No{entry.rank} {entry.playerName} ... {entry.points} pts,
-              </LeaderboardItem>
-            ))}
-          </LeaderboardList>
-        </LeaderboardSection>
+        {leaderboard.length > 0 && (
+          <div style={{ marginTop: '1.25rem' }}>
+            <Text as="p" style={{ fontWeight: 600, marginBottom: '0.5rem' }}>Leaderboard</Text>
+            <PlayerListContainer>
+              {leaderboard.map((entry, index) => {
+                const avatarIndex = (index % avatarCount) + 1;
+                const avatarSrc = `/assets/avatars/avatar_${avatarIndex}.svg`;
+                const gain = pointsGained[entry.playerId];
+                return (
+                  <PlayerListItem key={entry.playerId}>
+                    <PlayerListItemAvatar $avatarSrc={avatarSrc}>
+                      {entry.playerName.charAt(0).toUpperCase()}
+                    </PlayerListItemAvatar>
+                    <div style={{ flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.25rem' }}>
+                      <PlayerListItemName>
+                        {entry.rank === 1 && '🥇 '}
+                        {entry.rank === 2 && '🥈 '}
+                        {entry.rank === 3 && '🥉 '}
+                        #{entry.rank} {entry.playerName}
+                      </PlayerListItemName>
+                      <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                        <LeaderboardScore>{entry.points}</LeaderboardScore>
+                        {gain != null && gain > 0 && (
+                          <PointsGainBadge>+{gain}</PointsGainBadge>
+                        )}
+                      </span>
+                    </div>
+                  </PlayerListItem>
+                );
+              })}
+            </PlayerListContainer>
+          </div>
+        )}
       </GameCard>
       </GameScreenContent>
     </GameScreenContainer>

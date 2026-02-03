@@ -1,19 +1,35 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { useEffect, useState, useMemo } from 'react';
 import PlayerHeader from './PlayerHeader';
 import {
-  GameScreenContainer,
+  GameFinishedScreenContainer,
   GameScreenContent,
-  GameCard,
-  GameTitle,
-  LeaderboardSection,
-  LeaderboardHeading,
-  LeaderboardList,
-  LeaderboardItem,
-  TopicBadge,
+  PlayerListItemAvatar,
 } from './styled/GameComponents';
+import {
+  GameFinishedHeaderWrap,
+  GameFinishedLayout,
+  GameFinishedTriviSection,
+  GameFinishedTitleImg,
+  GameFinishedAwardsSection,
+  GameFinishedTriviCard,
+  TriviCommentaryCharacterContainer,
+  TriviCommentaryTextContainer,
+  TriviCommentaryTitle,
+  GameFinishedStatsComment,
+  GameFinishedAwardsSectionTitle,
+  GameFinishedAwardsGrid,
+  GameFinishedAwardCardVertical,
+  GameFinishedAwardAvatars,
+  GameFinishedAwardNames,
+  GameFinishedAwardName,
+} from './styled/BigScreenComponents';
 import { ButtonLarge, ButtonContainerCenter } from './styled/FormComponents';
+import { MutedText } from './styled/StatusComponents';
+import { api, type GameStatsResponse } from '../lib/api';
+import { colors } from './styled/theme';
 
 interface LeaderboardEntry {
   playerId: string;
@@ -24,92 +40,117 @@ interface LeaderboardEntry {
 }
 
 interface GameFinishedProps {
-  totalQuestions: number;
+  roomId?: string;
+  /** When provided (e.g. preview), use this instead of fetching; no API call. */
+  gameStats?: GameStatsResponse | null;
+  totalQuestions?: number;
   finalScore?: number;
   leaderboard: LeaderboardEntry[];
 }
 
 export default function GameFinished({
+  roomId,
+  gameStats: gameStatsProp,
   leaderboard,
 }: GameFinishedProps) {
   const router = useRouter();
+  const [gameStatsFetched, setGameStatsFetched] = useState<GameStatsResponse | null>(null);
+  const [gameStatsLoading, setGameStatsLoading] = useState(!!roomId && gameStatsProp === undefined);
+  const [gameStatsError, setGameStatsError] = useState(false);
+
+  const gameStats = gameStatsProp !== undefined ? gameStatsProp : gameStatsFetched;
+
+  useEffect(() => {
+    if (gameStatsProp !== undefined || !roomId) {
+      setGameStatsFetched(null);
+      setGameStatsLoading(false);
+      return;
+    }
+    setGameStatsLoading(true);
+    setGameStatsError(false);
+    api
+      .getGameStats(roomId)
+      .then(setGameStatsFetched)
+      .catch(() => setGameStatsError(true))
+      .finally(() => setGameStatsLoading(false));
+  }, [roomId, gameStatsProp]);
+
+  const playerAvatarMap = useMemo(() => {
+    const map = new Map<string, number>();
+    leaderboard.forEach((entry, index) => {
+      map.set(entry.playerId, (index % 10) + 1);
+    });
+    return map;
+  }, [leaderboard]);
 
   const handleNewGame = () => {
     router.push('/');
   };
 
-  // Mock awards for each participant
-  const getAward = (rank: number, index: number): string => {
-    const awards = [
-      '🏆 Champion',
-      '🥈 Runner-up',
-      '🥉 Third Place',
-      '🌟 Rising Star',
-      '💪 Most Improved',
-      '🎯 Sharpshooter',
-      '⚡ Speed Demon',
-      '🧠 Brainiac',
-      '🎨 Creative Thinker',
-      '🚀 Quick Learner',
-      '💎 Diamond Player',
-      '⭐ Superstar',
-      '🎪 Entertainer',
-      '🔥 Fire Starter',
-      '🌙 Night Owl',
-    ];
-    
-    // Use rank-based awards for top 3, then cycle through others
-    if (rank === 1) return awards[0];
-    if (rank === 2) return awards[1];
-    if (rank === 3) return awards[2];
-    
-    // For others, use index to cycle through remaining awards
-    return awards[3 + ((index - 3) % (awards.length - 3))];
-  };
-
   return (
-    <GameScreenContainer>
-      <PlayerHeader />
+    <GameFinishedScreenContainer>
+      <GameFinishedHeaderWrap>
+        <PlayerHeader />
+      </GameFinishedHeaderWrap>
       <GameScreenContent>
-      <GameCard>
-        <GameTitle>Game Finished! 🎉</GameTitle>
-        <LeaderboardSection>
-          <LeaderboardHeading>Leader board:</LeaderboardHeading>
-          <LeaderboardList>
-            {leaderboard.map((entry, index) => (
-              <LeaderboardItem key={entry.playerId}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                  <div>
-                    No{entry.rank} {entry.playerName} ... {entry.points} pts
-                  </div>
-                  <TopicBadge style={{ 
-                    fontSize: '0.75rem', 
-                    padding: '0.25rem 0.75rem',
-                    backgroundColor: entry.rank <= 3 ? 'rgba(255, 215, 0, 0.2)' : 'rgba(59, 130, 246, 0.1)',
-                    borderColor: entry.rank <= 3 ? 'rgba(255, 215, 0, 0.5)' : 'rgba(59, 130, 246, 0.3)',
-                    fontWeight: 600,
-                  }}>
-                    {getAward(entry.rank, index)}
-                  </TopicBadge>
-                </div>
-                {entry.topicScore && Object.keys(entry.topicScore).length > 0 && (
-                  <div style={{ marginTop: '0.25rem', display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-                    {Object.entries(entry.topicScore).map(([topic, score]) => (
-                      <TopicBadge key={topic} style={{ fontSize: '0.65rem', padding: '0.15rem 0.5rem' }}>
-                        {topic}: {score}
-                      </TopicBadge>
-                    ))}
-                  </div>
+        <GameFinishedLayout>
+          {/* Mobile order: 1 Trivi → 2 Awards → 3 Leaderboard + Button. Desktop: left = Trivi + Leaderboard + Button, right = Awards */}
+          <GameFinishedTriviSection>
+            <GameFinishedTitleImg src="/assets/game_title.svg" alt="Wildcard Trivia" />
+            <GameFinishedTriviCard>
+              <TriviCommentaryCharacterContainer>
+                <img src="/assets/Trivi_laugh.svg" alt="Trivi" />
+              </TriviCommentaryCharacterContainer>
+              <TriviCommentaryTextContainer>
+                <TriviCommentaryTitle>What a game!</TriviCommentaryTitle>
+                {gameStatsLoading && (
+                  <MutedText style={{ marginTop: '0.5rem' }}>Loading stats…</MutedText>
                 )}
-              </LeaderboardItem>
-            ))}
-          </LeaderboardList>
-        </LeaderboardSection>
-        <ButtonContainerCenter>
-          <ButtonLarge onClick={handleNewGame}>New Game</ButtonLarge>
-        </ButtonContainerCenter>
-      </GameCard>
+                {!gameStatsLoading && gameStatsError && (
+                  <MutedText style={{ marginTop: '0.5rem' }}>Could not load game stats</MutedText>
+                )}
+                {!gameStatsLoading && gameStats && (
+                  <GameFinishedStatsComment>{gameStats.triviComment}</GameFinishedStatsComment>
+                )}
+              </TriviCommentaryTextContainer>
+            </GameFinishedTriviCard>
+            <ButtonContainerCenter style={{ marginTop: '1.5rem' }}>
+              <ButtonLarge onClick={handleNewGame}>Start a new game</ButtonLarge>
+            </ButtonContainerCenter>
+          </GameFinishedTriviSection>
+
+          <GameFinishedAwardsSection>
+            <GameFinishedAwardsSectionTitle>The Awards Go To…</GameFinishedAwardsSectionTitle>
+            {!gameStatsLoading && gameStats && gameStats.awards.length > 0 ? (
+              <GameFinishedAwardsGrid>
+                {gameStats.awards.map((award, idx) => (
+                  <GameFinishedAwardCardVertical key={`${award.awardName}-${idx}`}>
+                    <GameFinishedAwardAvatars>
+                      {award.playerIds.map((pid) => {
+                        const avIdx = playerAvatarMap.get(pid) ?? ((pid.slice(0, 8).split('').reduce((a, c) => a + c.charCodeAt(0), 0) % 10) + 1);
+                        const avatarSrc = `/assets/avatars/avatar_${avIdx}.svg`;
+                        return (
+                          <PlayerListItemAvatar key={pid} $avatarSrc={avatarSrc}>
+                            {award.playerNames[award.playerIds.indexOf(pid)]?.charAt(0).toUpperCase() ?? '?'}
+                          </PlayerListItemAvatar>
+                        );
+                      })}
+                    </GameFinishedAwardAvatars>
+                    <GameFinishedAwardNames>
+                      {award.playerNames.join(' & ')}
+                    </GameFinishedAwardNames>
+                    <GameFinishedAwardName>{award.awardName}</GameFinishedAwardName>
+                  </GameFinishedAwardCardVertical>
+                ))}
+              </GameFinishedAwardsGrid>
+            ) : (
+              <MutedText style={{ textAlign: 'center', color: colors.surface }}>
+                {gameStatsLoading ? 'Loading…' : 'No awards this time.'}
+              </MutedText>
+            )}
+          </GameFinishedAwardsSection>
+        </GameFinishedLayout>
       </GameScreenContent>
-    </GameScreenContainer>
+    </GameFinishedScreenContainer>
   );
 }
