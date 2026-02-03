@@ -4,29 +4,36 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { QRCodeSVG } from 'qrcode.react';
 import {
-  PageContainer,
-  FormCard,
-  Title,
   ButtonSuccess,
   ButtonPrimary,
   Input,
 } from './styled/FormComponents';
-import PlayerHeader from './PlayerHeader';
+import { GameTitleImage } from './styled/GameComponents';
 import {
-  PlayerPageContainer,
-  PlayerPageContent,
+  BigScreenContainer,
+  BigScreenLayout,
+  BigScreenRightContainer,
+  BigScreenGameTitle,
+  BigScreenLeaderboardCard,
+  TriviCommentaryCharacterContainer,
+  TriviCommentaryTextContainer,
+  TriviCommentaryTitle,
+  TriviCommentaryBody,
+  CreateGameLeftSection,
+  CreateGameWelcomeCard,
+  CreateGameSectionTitle,
+  StartGameFormCard,
+} from './styled/BigScreenComponents';
+import {
   QRCodeContainer,
-  GameContainer,
-  TopicsSection,
-  TopicsContainer,
-  TopicBadge,
-  CardsContainer,
-  PlayerListCard,
   PlayerListTitle,
   PlayerListItem,
   PlayerListItemAvatar,
   PlayerListItemName,
   PlayerListContainer,
+  TopicsContainer,
+  TopicBadge,
+  GameContainer,
 } from './styled/GameComponents';
 import { api, tokenStorage, RoomResponse } from '../lib/api';
 import { useWebSocket } from '../lib/useWebSocket';
@@ -34,7 +41,7 @@ import { useBackgroundMusic } from '../lib/useBackgroundMusic';
 import MusicControl from './MusicControl';
 import { getSessionMode } from '../lib/deviceDetection';
 import { ErrorText } from './styled/ErrorComponents';
-import { BigScreenNotice, WarningText } from './styled/InfoComponents';
+import { BigScreenNotice } from './styled/InfoComponents';
 import { SuccessText, MutedText } from './styled/StatusComponents';
 
 interface StartGameProps {
@@ -49,12 +56,10 @@ export default function StartGame({ roomId }: StartGameProps) {
   const [error, setError] = useState('');
   const [sessionMode, setSessionMode] = useState<'player' | 'display'>('player');
 
-  // Detect session mode after mount to avoid hydration mismatch
   useEffect(() => {
     setSessionMode(getSessionMode());
   }, []);
 
-  // Generate the room URL
   const roomUrl = useMemo(() => {
     if (typeof window !== 'undefined') {
       return `${window.location.origin}/join?roomId=${roomId}`;
@@ -62,7 +67,6 @@ export default function StartGame({ roomId }: StartGameProps) {
     return '';
   }, [roomId]);
 
-  // Fetch room data
   const fetchRoom = useCallback(async () => {
     try {
       const roomData = await api.getRoom(roomId);
@@ -75,7 +79,6 @@ export default function StartGame({ roomId }: StartGameProps) {
     }
   }, [roomId]);
 
-  // Initial fetch
   useEffect(() => {
     if (roomId) {
       void fetchRoom();
@@ -83,26 +86,20 @@ export default function StartGame({ roomId }: StartGameProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
 
-  // WebSocket connection for real-time updates
-  const handleWebSocketMessage = useCallback((message: { 
-    type: string; 
+  const handleWebSocketMessage = useCallback((message: {
+    type: string;
     startedAt?: string;
     submittedCount?: number;
     totalPlayers?: number;
   }) => {
     switch (message.type) {
       case 'player_joined':
-        // Refresh room data to get updated players and topics
         fetchRoom();
         break;
-      
       case 'topic_submitted':
-        // Refresh room data to get updated collected topics
         fetchRoom();
         break;
-      
       case 'game_started':
-        // Game has started, navigate to appropriate page
         if (sessionMode === 'display') {
           router.push(`/host/${roomId}/display`);
         } else {
@@ -116,7 +113,6 @@ export default function StartGame({ roomId }: StartGameProps) {
     onMessage: handleWebSocketMessage,
   });
 
-  // Background music
   const { isMuted, toggleMute, isLoaded } = useBackgroundMusic('/background-music.mp3', {
     autoPlay: true,
     loop: true,
@@ -139,163 +135,187 @@ export default function StartGame({ roomId }: StartGameProps) {
       return;
     }
 
-    setIsStarting(true);
     setError('');
 
+    if (sessionMode === 'display') {
+      // Pass current room/players to display so it can show the list immediately while loading
+      if (room) {
+        try {
+          sessionStorage.setItem('displayInitialRoom', JSON.stringify({ roomId, room }));
+        } catch {
+          // ignore
+        }
+      }
+      router.push(`/host/${roomId}/display`);
+      api.startGame(roomId, hostToken).then((response) => {
+        if (response.playerToken) {
+          tokenStorage.setPlayerToken(roomId, response.playerToken);
+        }
+      }).catch((err) => {
+        const message = err instanceof Error ? err.message : 'Failed to start game';
+        try {
+          sessionStorage.setItem('startGameError', JSON.stringify({ roomId, message }));
+        } catch {
+          // ignore storage errors
+        }
+      });
+      return;
+    }
+
+    setIsStarting(true);
     try {
       const response = await api.startGame(roomId, hostToken);
-      // Store the host's player token if provided (in player mode)
       if (response.playerToken) {
         tokenStorage.setPlayerToken(roomId, response.playerToken);
       }
-      // Navigate to appropriate page based on session mode
-      if (sessionMode === 'display') {
-        // In display mode, go to big screen display
-        router.push(`/host/${roomId}/display`);
-      } else {
-        // In player mode, go to game page
-        router.push(`/game/${roomId}`);
-      }
+      router.push(`/game/${roomId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start game. Please try again.');
       setIsStarting(false);
     }
   };
 
-  if (isLoading) {
-    return (
-      <>
-        <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
-        <PageContainer>
-          <FormCard>
-            <GameContainer>
-              <Title>Loading room...</Title>
-            </GameContainer>
-          </FormCard>
-        </PageContainer>
-      </>
-    );
-  }
+  const renderRightContent = () => {
+    if (isLoading) {
+      return (
+        <StartGameFormCard>
+          <CreateGameSectionTitle>Room Ready</CreateGameSectionTitle>
+          <GameContainer>
+            <MutedText style={{ textAlign: 'center' }}>Loading room...</MutedText>
+          </GameContainer>
+        </StartGameFormCard>
+      );
+    }
 
-  if (error && !room) {
-    return (
-      <>
-        <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
-        <PageContainer>
-          <FormCard>
-            <GameContainer>
-              <Title>Error</Title>
-              <ErrorText>{error}</ErrorText>
-            </GameContainer>
-          </FormCard>
-        </PageContainer>
-      </>
-    );
-  }
+    if (error && !room) {
+      return (
+        <StartGameFormCard>
+          <CreateGameSectionTitle>Room Ready</CreateGameSectionTitle>
+          <GameContainer>
+            <ErrorText>{error}</ErrorText>
+          </GameContainer>
+        </StartGameFormCard>
+      );
+    }
 
-  if (!room) {
-    return null;
-  }
+    if (!room) {
+      return (
+        <StartGameFormCard>
+          <CreateGameSectionTitle>Room Ready</CreateGameSectionTitle>
+          <GameContainer>
+            <MutedText style={{ textAlign: 'center' }}>Loading room...</MutedText>
+          </GameContainer>
+        </StartGameFormCard>
+      );
+    }
+
+    return (
+      <StartGameFormCard>
+        <CreateGameSectionTitle>Room Ready</CreateGameSectionTitle>
+
+        {sessionMode === 'display' && (
+          <BigScreenNotice>
+            <strong>Keep this screen on!</strong>
+            <br />
+            This screen will display the questions and the leaderboard. Use your own device to join the game and submit answers.
+          </BigScreenNotice>
+        )}
+
+        <QRCodeContainer>
+          {roomUrl && <QRCodeSVG value={roomUrl} size={160} />}
+        </QRCodeContainer>
+
+        <Input value={roomUrl} readOnly />
+
+        <ButtonPrimary onClick={handleCopyUrl} style={{ marginBottom: '1.5rem' }}>
+          Copy URL
+        </ButtonPrimary>
+
+        {error && <ErrorText style={{ marginBottom: '1rem' }}>{error}</ErrorText>}
+
+        {room.status === 'waiting' && (
+          <ButtonSuccess
+            onClick={handleStart}
+            disabled={isStarting || room.players.length === 0}
+          >
+            {isStarting ? 'Starting...' : 'Start'}
+          </ButtonSuccess>
+        )}
+        {room.status === 'started' && (
+          <SuccessText>Game Started</SuccessText>
+        )}
+      </StartGameFormCard>
+    );
+  };
 
   return (
     <>
       <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
-      <PlayerPageContainer>
-        <PlayerHeader />
-        <PlayerPageContent>
-        <CardsContainer>
-          {/* Player List Card */}
-          <PlayerListCard>
-            <PlayerListTitle>Players</PlayerListTitle>
-            <PlayerListContainer>
-              {room.players.length > 0 ? (
-                room.players.map((player, index) => {
-                  // Assign unique avatars by position (1–10); wrap only when more than 10 players
-                  const avatarCount = 10;
-                  const avatarIndex = (index % avatarCount) + 1;
-                  const avatarSrc = `/assets/avatars/avatar_${avatarIndex}.svg`;
-                  
-                  return (
-                    <PlayerListItem key={player.playerId}>
-                      <PlayerListItemAvatar $avatarSrc={avatarSrc}>
-                        {player.playerName.charAt(0).toUpperCase()}
-                      </PlayerListItemAvatar>
-                      <PlayerListItemName>{player.playerName}</PlayerListItemName>
-                    </PlayerListItem>
-                  );
-                })
-              ) : (
-                <MutedText style={{ textAlign: 'center', padding: '2rem 0' }}>
-                  No players yet
-                </MutedText>
-              )}
-            </PlayerListContainer>
-          </PlayerListCard>
+      <BigScreenContainer>
+        <BigScreenLayout>
+          <CreateGameLeftSection>
+            <BigScreenGameTitle>
+              <GameTitleImage src="/assets/game_title.svg" alt="Wildcard Trivia" />
+            </BigScreenGameTitle>
 
-          {/* Main Game Card */}
-          <FormCard>
-            <GameContainer>
-              {/* Big Screen Mode Notice */}
-              {sessionMode === 'display' && (
-                <BigScreenNotice>
-                  <strong>🖥️ Big Screen Mode</strong>
-                  <br />
-                  This screen will display questions and leaderboard.
-                  <br />
-                  <WarningText>
-                    You must join as a player on another device to answer questions!
-                  </WarningText>
-                </BigScreenNotice>
-              )}
+            <CreateGameWelcomeCard>
+              <TriviCommentaryCharacterContainer>
+                <img src="/assets/Trivi_big_smile.svg" alt="Trivi character" />
+              </TriviCommentaryCharacterContainer>
+              <TriviCommentaryTextContainer>
+                {room?.collectedTopics && room.collectedTopics.length > 0 ? (
+                  <div style={{ textAlign: 'left', width: '100%' }}>
+                    <TriviCommentaryTitle>
+                      Topics submitted ({room.collectedTopics.length})
+                    </TriviCommentaryTitle>
+                    <TopicsContainer style={{ marginTop: '0.5rem', justifyContent: 'flex-start' }}>
+                      {room.collectedTopics.map((topic, index) => (
+                        <TopicBadge key={index}>{topic}</TopicBadge>
+                      ))}
+                    </TopicsContainer>
+                  </div>
+                ) : (
+                  <>
+                    <TriviCommentaryTitle>Share the link!</TriviCommentaryTitle>
+                    <TriviCommentaryBody>
+                      Players can join using the link. When everyone&apos;s in, hit Start.
+                    </TriviCommentaryBody>
+                  </>
+                )}
+              </TriviCommentaryTextContainer>
+            </CreateGameWelcomeCard>
 
-              {/* QR Code */}
-              <QRCodeContainer>
-                {roomUrl && <QRCodeSVG value={roomUrl} size={200} />}
-              </QRCodeContainer>
-
-              <Input value={roomUrl} readOnly />
-
-              {/* Copy URL Button */}
-              <ButtonPrimary onClick={handleCopyUrl} style={{ marginBottom: '2rem' }}>
-                Copy URL
-              </ButtonPrimary>
-
-              {/* Display collected topics */}
-              {room.collectedTopics && room.collectedTopics.length > 0 && (
-                <TopicsSection>
-                  <MutedText style={{ marginBottom: '0.5rem' }}>
-                    Topics submitted ({room.collectedTopics.length}):
+            <BigScreenLeaderboardCard>
+              <PlayerListTitle>Players</PlayerListTitle>
+              <PlayerListContainer>
+                {room && room.players.length > 0 ? (
+                  room.players.map((player, index) => {
+                    const avatarCount = 10;
+                    const avatarIndex = (index % avatarCount) + 1;
+                    const avatarSrc = `/assets/avatars/avatar_${avatarIndex}.svg`;
+                    return (
+                      <PlayerListItem key={player.playerId}>
+                        <PlayerListItemAvatar $avatarSrc={avatarSrc}>
+                          {player.playerName.charAt(0).toUpperCase()}
+                        </PlayerListItemAvatar>
+                        <PlayerListItemName>{player.playerName}</PlayerListItemName>
+                      </PlayerListItem>
+                    );
+                  })
+                ) : (
+                  <MutedText style={{ textAlign: 'center', padding: '2rem 0' }}>
+                    No players yet
                   </MutedText>
-                  <TopicsContainer>
-                    {room.collectedTopics.map((topic, index) => (
-                      <TopicBadge key={index}>
-                        {topic}
-                      </TopicBadge>
-                    ))}
-                  </TopicsContainer>
-                </TopicsSection>
-              )}
+                )}
+              </PlayerListContainer>
+            </BigScreenLeaderboardCard>
+          </CreateGameLeftSection>
 
-              {error && <ErrorText style={{ marginBottom: '1rem' }}>{error}</ErrorText>}
-
-              {/* Start button - only show if game hasn't started */}
-              {room.status === 'waiting' && (
-                <ButtonSuccess 
-                  onClick={handleStart}
-                  disabled={isStarting || room.players.length === 0}
-                >
-                  {isStarting ? 'Starting...' : 'Start'}
-                </ButtonSuccess>
-              )}
-              {room.status === 'started' && (
-                <SuccessText>Game Started</SuccessText>
-              )}
-            </GameContainer>
-          </FormCard>
-        </CardsContainer>
-        </PlayerPageContent>
-      </PlayerPageContainer>
+          <BigScreenRightContainer>
+            {renderRightContent()}
+          </BigScreenRightContainer>
+        </BigScreenLayout>
+      </BigScreenContainer>
     </>
   );
 }
-

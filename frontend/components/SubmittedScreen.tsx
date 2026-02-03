@@ -9,23 +9,12 @@ import {
   GameHeader,
   GameHeaderRow,
   CircularBadge,
-  LeaderboardSection,
-  LeaderboardHeading,
-  LeaderboardList,
-  LeaderboardItem,
   QuestionText,
   RevealedOptionRow,
   GameTimerBadge,
   GameRoundLabel,
 } from './styled/GameComponents';
 import { OptionsContainer } from './styled/OptionsContainer';
-
-interface LeaderboardEntry {
-  playerId: string;
-  rank: number;
-  playerName: string;
-  points: number;
-}
 
 interface SubmittedScreenProps {
   currentQuestion: number;
@@ -38,7 +27,7 @@ interface SubmittedScreenProps {
   correctAnswerIndex: number;
   selectedAnswer: string | null;
   explanation: string;
-  leaderboard: LeaderboardEntry[];
+  leaderboard: { playerId: string; rank: number; playerName: string; points: number }[];
   timer?: number;
 }
 
@@ -69,7 +58,6 @@ export default function SubmittedScreen({
   correctAnswerIndex,
   selectedAnswer,
   explanation,
-  leaderboard,
   timer,
 }: SubmittedScreenProps) {
   const safeOptions = options ?? [];
@@ -118,16 +106,6 @@ export default function SubmittedScreen({
         {explanation && (
           <Text style={{ marginTop: '1rem' }}><strong>Explanation:</strong> {explanation}</Text>
         )}
-        <LeaderboardSection>
-          <LeaderboardHeading>Leader board:</LeaderboardHeading>
-          <LeaderboardList>
-            {leaderboard.map((entry) => (
-              <LeaderboardItem key={entry.playerId}>
-                No{entry.rank} {entry.playerName} ... {entry.points} pts,
-              </LeaderboardItem>
-            ))}
-          </LeaderboardList>
-        </LeaderboardSection>
       </GameCard>
       </GameScreenContent>
     </GameScreenContainer>

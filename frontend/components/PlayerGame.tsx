@@ -12,8 +12,6 @@ import { api, tokenStorage, LeaderboardResponse, RoomResponse } from '../lib/api
 import { useWebSocket } from '../lib/useWebSocket';
 import { useGameTimerDisplay } from '../lib/useGameTimerDisplay';
 import { gameStateMachine, type LeaderboardEntry } from '../lib/gameStateMachine';
-import { useBackgroundMusic } from '../lib/useBackgroundMusic';
-import MusicControl from './MusicControl';
 import { 
   FormCard, 
   Title, 
@@ -33,17 +31,6 @@ interface PlayerGameProps {
 export default function PlayerGame({ roomId }: PlayerGameProps) {
   const router = useRouter();
   const playerToken = tokenStorage.getPlayerToken(roomId);
-  const hostToken = tokenStorage.getHostToken(roomId);
-  
-  // Check if this player is also the host (has both tokens)
-  const isHost = !!hostToken;
-
-  // Background music (only for host)
-  const { isMuted, toggleMute, isLoaded } = useBackgroundMusic('/background-music.mp3', {
-    autoPlay: isHost, // Only auto-play if this player is the host
-    loop: true,
-    volume: 0.3,
-  });
 
   // Use XState machine for formal state management
   const [state, send] = useMachine(gameStateMachine);
@@ -383,7 +370,6 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
   if (state.value === 'roundFinished') {
     return (
       <>
-        {isHost && <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />}
         <RoundFinished
           currentRound={state.context.room.currentRound}
           totalRounds={state.context.room.numRounds}
@@ -398,7 +384,6 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
   if (state.value === 'newRound') {
     return (
       <>
-        {isHost && <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />}
         <NewRoundTopicSubmission
           currentRound={state.context.room.currentRound + 1}
           totalRounds={state.context.room.numRounds}
@@ -413,11 +398,11 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
   if (state.value === 'finished') {
     return (
       <>
-        {isHost && <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />}
         <GameFinished
           totalQuestions={state.context.room.questionsPerRound}
           finalScore={state.context.score}
           leaderboard={state.context.leaderboard}
+          showLeaderboard={true}
         />
       </>
     );
@@ -438,7 +423,6 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
   if (state.value === 'submitted') {
     return (
       <>
-        {isHost && <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />}
         <SubmittedScreen
           currentQuestion={currentQuestionIndex + 1}
           totalQuestions={state.context.room.questionsPerRound}
@@ -460,7 +444,6 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
   // Active question state
   return (
     <>
-      {isHost && <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />}
       <QuestionScreen
         currentQuestion={currentQuestionIndex + 1}
         totalQuestions={state.context.room.questionsPerRound}

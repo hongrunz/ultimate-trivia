@@ -363,10 +363,10 @@ export const CircularBadge = styled.div`
   align-items: center;
   justify-content: center;
   font-family: ${typography.fontFamily.dmSans};
-  font-weight: ${typography.fontWeight.bold};
+  font-weight: ${typography.fontWeight.normal};
   font-size: ${typography.fontSize.base};
   line-height: ${typography.lineHeight.tight};
-  color: ${colors.typeMain};
+  color: ${colors.typeSecondary};
 `;
 
 export const GameSubmitButton = styled.button`
