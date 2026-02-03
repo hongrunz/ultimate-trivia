@@ -3,24 +3,44 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  FormCard,
   FormGroup,
   FieldContainer,
   Label,
   Input,
   ButtonPrimary,
-  ButtonContainer,
+  ButtonContainerCenter,
 } from './styled/FormComponents';
 import { ErrorText } from './styled/ErrorComponents';
 import { InfoBox } from './styled/InfoComponents';
-import PlayerHeader from './PlayerHeader';
-import { PlayerPageContainer, PlayerPageContent } from './styled/GameComponents';
+import { GameTitleImage } from './styled/GameComponents';
+import {
+  BigScreenContainer,
+  BigScreenLayout,
+  BigScreenRightContainer,
+  BigScreenGameTitle,
+  TriviCommentaryCharacterContainer,
+  TriviCommentaryTextContainer,
+  TriviCommentaryTitle,
+  TriviCommentaryBody,
+  CreateGameLeftSection,
+  CreateGameWelcomeCard,
+  CreateGameFormCard,
+  CreateGameSectionTitle,
+  CreateGameDurationText,
+} from './styled/BigScreenComponents';
 import { api, tokenStorage } from '../lib/api';
 import { getSessionMode, getDeviceType } from '../lib/deviceDetection';
+import { useBackgroundMusic } from '../lib/useBackgroundMusic';
+import MusicControl from './MusicControl';
 
 const DEFAULT_NUM_QUESTIONS = 3;
-const DEFAULT_TIME_LIMIT = 10;
+const DEFAULT_TIME_LIMIT = 20;
 const DEFAULT_NUM_ROUNDS = 3;
+
+/** Answer reveal timer length (seconds) — must match useGameTimerDisplay.REVIEW_TIME_SECONDS */
+const ANSWER_REVEAL_SECONDS = 15;
+/** Buffer between rounds for topic submission / leaderboard (minutes) for max estimate */
+const ROUND_BUFFER_MINUTES = 2;
 
 export default function CreateGame() {
   const router = useRouter();
@@ -35,16 +55,19 @@ export default function CreateGame() {
   const [isMounted, setIsMounted] = useState(false);
   const [numRounds, setNumRounds] = useState(String(DEFAULT_NUM_ROUNDS));
 
-  // Detect device type and session mode after mount to avoid hydration mismatch
   useEffect(() => {
-    // Batch updates to minimize re-renders
     const mode = getSessionMode();
     const device = getDeviceType();
-    
     setSessionMode(mode);
     setDeviceType(device);
     setIsMounted(true);
   }, []);
+
+  const { isMuted, toggleMute, isLoaded } = useBackgroundMusic('/background-music.mp3', {
+    autoPlay: true,
+    loop: true,
+    volume: 0.3,
+  });
 
   const parsedNumRounds = numRounds === '' ? NaN : parseInt(numRounds, 10);
   const parsedNumQuestions = numQuestions === '' ? NaN : parseInt(numQuestions, 10);
@@ -59,6 +82,18 @@ export default function CreateGame() {
     isNumRoundsValid &&
     isNumQuestionsValid &&
     isTimeLimitValid;
+
+  // Total time range: min = rounds * questions * (timePerQuestion + answerReveal); max = min + rounds * 2min
+  const totalSecondsMin =
+    isNumRoundsValid && isNumQuestionsValid && isTimeLimitValid
+      ? parsedNumRounds * parsedNumQuestions * (parsedTimeLimit + ANSWER_REVEAL_SECONDS)
+      : 0;
+  const totalSecondsMax =
+    totalSecondsMin > 0
+      ? totalSecondsMin + parsedNumRounds * ROUND_BUFFER_MINUTES * 60
+      : 0;
+  const totalMinMinutes = totalSecondsMin > 0 ? Math.ceil(totalSecondsMin / 60) : 0;
+  const totalMaxMinutes = totalSecondsMax > 0 ? Math.ceil(totalSecondsMax / 60) : 0;
 
   const handleCreateRoom = async () => {
     if (sessionMode === 'player' && !hostName.trim()) {
@@ -83,10 +118,7 @@ export default function CreateGame() {
         numRounds: parsedNumRounds,
       });
 
-      // Store host token
       tokenStorage.setHostToken(response.roomId, response.hostToken);
-
-      // Navigate to host start page
       router.push(`/host/${response.roomId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create room. Please try again.');
@@ -95,102 +127,119 @@ export default function CreateGame() {
   };
 
   return (
-    <PlayerPageContainer>
-      <PlayerHeader />
-      <PlayerPageContent>
-      <FormCard>
-        {/* Show device mode info */}
-        <InfoBox $variant={deviceType}>
-          {deviceType === 'web' ? (
-            <>
-              🖥️ <strong>Big Screen Mode:</strong> This device will display questions and leaderboard. 
-              You&apos;ll need to join as a player on another device to answer questions.
-            </>
-          ) : (
-            <>
-              📱 <strong>Mobile Mode:</strong> You&apos;ll answer questions from this device.
-            </>
-          )}
-        </InfoBox>
-        
-        <FormGroup>
-          {sessionMode === 'player' && (
-            <FieldContainer>
-              <Label htmlFor="hostName">Your Name:</Label>
-              <Input
-                id="hostName"
-                type="text"
-                value={hostName}
-                onChange={(e) => setHostName(e.target.value)}
-                placeholder="Enter your name"
-              />
-            </FieldContainer>
-          )}
+    <>
+      <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} />
+      <BigScreenContainer>
+      <BigScreenLayout>
+        {/* Left section: title + welcome card (same style as BigScreenDisplay) */}
+        <CreateGameLeftSection>
+          <BigScreenGameTitle>
+            <GameTitleImage src="/assets/game_title.svg" alt="Wildcard Trivia" />
+          </BigScreenGameTitle>
 
-          {deviceType === 'mobile' && (
-            <FieldContainer>
-              <Label htmlFor="topic">Topic Suggestion:</Label>
-              <Input
-                id="topic"
-                type="text"
-                value={topic}
-                onChange={(e) => setTopic(e.target.value)}
-                placeholder="Enter a topic for questions"
-              />
-            </FieldContainer>
-          )}
+          <CreateGameWelcomeCard>
+            <TriviCommentaryCharacterContainer>
+              <img src="/assets/Trivi_big_smile.svg" alt="Trivi character" />
+            </TriviCommentaryCharacterContainer>
+            <TriviCommentaryTextContainer>
+              <TriviCommentaryTitle>Create a room to get started!</TriviCommentaryTitle>
+              <TriviCommentaryBody>
+              I will stay on this screen and guide you through the game. Use your own device to join and play.
+              </TriviCommentaryBody>
+            </TriviCommentaryTextContainer>
+          </CreateGameWelcomeCard>
+        </CreateGameLeftSection>
 
-          <FieldContainer>
-            <Label htmlFor="numRounds">Number of rounds:</Label>
-            <Input
-              id="numRounds"
-              type="number"
-              value={numRounds}
-              min={1}
-              onChange={(e) => setNumRounds(e.target.value)}
-              placeholder="e.g., 3"
-            />
-          </FieldContainer>
+        {/* Right section: white form card (same style as BigScreen right panel) */}
+        <BigScreenRightContainer>
+          <CreateGameFormCard>
+            <CreateGameSectionTitle>Game Room Setup</CreateGameSectionTitle>
 
-          <FieldContainer>
-            <Label htmlFor="numQuestions">Number of questions to be asked each round:</Label>
-            <Input
-              id="numQuestions"
-              type="number"
-              value={numQuestions}
-              min={1}
-              onChange={(e) => setNumQuestions(e.target.value)}
-              placeholder="e.g., 3"
-            />
-          </FieldContainer>
+           
+            <FormGroup>
+              {sessionMode === 'player' && (
+                <FieldContainer>
+                  <Label htmlFor="hostName">Your Name:</Label>
+                  <Input
+                    id="hostName"
+                    type="text"
+                    value={hostName}
+                    onChange={(e) => setHostName(e.target.value)}
+                    placeholder="Enter your name"
+                  />
+                </FieldContainer>
+              )}
 
-          <FieldContainer>
-            <Label htmlFor="timeLimit">Time limit per question (in seconds):</Label>
-            <Input
-              id="timeLimit"
-              type="number"
-              value={timeLimit}
-              min={1}
-              onChange={(e) => setTimeLimit(e.target.value)}
-              placeholder="e.g., 20"
-            />
-          </FieldContainer>
+              {deviceType === 'mobile' && (
+                <FieldContainer>
+                  <Label htmlFor="topic">Topic Suggestion:</Label>
+                  <Input
+                    id="topic"
+                    type="text"
+                    value={topic}
+                    onChange={(e) => setTopic(e.target.value)}
+                    placeholder="Enter a topic for questions"
+                  />
+                </FieldContainer>
+              )}
 
-        </FormGroup>
+              <FieldContainer>
+                <Label htmlFor="numRounds">Number of rounds</Label>
+                <Input
+                  id="numRounds"
+                  type="number"
+                  value={numRounds}
+                  min={1}
+                  onChange={(e) => setNumRounds(e.target.value)}
+                  placeholder="e.g., 5"
+                />
+              </FieldContainer>
 
-        {error && <ErrorText>{error}</ErrorText>}
-        
-        <ButtonContainer>
-          <ButtonPrimary
-            onClick={handleCreateRoom}
-            disabled={!isFormValid || isLoading}
-          >
-            {isLoading ? 'Creating...' : 'Create Room'}
-          </ButtonPrimary>
-        </ButtonContainer>
-      </FormCard>
-      </PlayerPageContent>
-    </PlayerPageContainer>
+              <FieldContainer>
+                <Label htmlFor="numQuestions">Number of questions each round</Label>
+                <Input
+                  id="numQuestions"
+                  type="number"
+                  value={numQuestions}
+                  min={1}
+                  onChange={(e) => setNumQuestions(e.target.value)}
+                  placeholder="e.g., 5"
+                />
+              </FieldContainer>
+
+              <FieldContainer>
+                <Label htmlFor="timeLimit">Time limit per question</Label>
+                <Input
+                  id="timeLimit"
+                  type="number"
+                  value={timeLimit}
+                  min={1}
+                  onChange={(e) => setTimeLimit(e.target.value)}
+                  placeholder="e.g., 20 (seconds)"
+                />
+              </FieldContainer>
+            </FormGroup>
+
+            {error && <ErrorText>{error}</ErrorText>}
+
+            {totalMinMinutes > 0 && totalMaxMinutes > 0 && (
+              <CreateGameDurationText>
+                Your game will take approximately {totalMinMinutes}–{totalMaxMinutes} min.
+              </CreateGameDurationText>
+            )}
+
+            <ButtonContainerCenter>
+              <ButtonPrimary
+                onClick={handleCreateRoom}
+                disabled={!isFormValid || isLoading}
+              >
+                {isLoading ? 'Creating...' : 'Create Room'}
+              </ButtonPrimary>
+            </ButtonContainerCenter>
+          </CreateGameFormCard>
+        </BigScreenRightContainer>
+      </BigScreenLayout>
+    </BigScreenContainer>
+    </>
   );
 }
-

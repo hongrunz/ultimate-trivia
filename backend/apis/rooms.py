@@ -390,8 +390,8 @@ async def submit_answer(
         correct_answer_option = question.options[question.correct_answer]
         is_correct = request.answer.lower().strip() == correct_answer_option.lower().strip()
         
-        # Update score: 1 point for correct answer
-        points = 1 if is_correct else 0
+        # Update score: 100 points for correct answer
+        points = 100 if is_correct else 0
         if points > 0:
             updated_player = PlayerStore.update_player_score(player.player_id, points, question.topics)
             current_score = updated_player.score
