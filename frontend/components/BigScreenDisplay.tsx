@@ -10,7 +10,7 @@ import { useWebSocket } from '../lib/useWebSocket';
 import { useBackgroundMusic } from '../lib/useBackgroundMusic';
 import { useGameTimerDisplay } from '../lib/useGameTimerDisplay';
 import { useVoiceCommentary } from '../lib/useVoiceCommentary';
-import { gameStateMachine, type LeaderboardEntry } from '../lib/gameStateMachine';
+import { gameStateMachine, type LeaderboardEntry, ANSWER_REVEAL_SECONDS } from '../lib/gameStateMachine';
 import MusicControl from './MusicControl';
 import { GameTitle, GameTitleImage, PlayerListTitle, PlayerListItem, PlayerListItemAvatar, PlayerListItemName, PlayerListContainer } from './styled/GameComponents';
 import {
@@ -209,7 +209,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     }
   }, [state.value, state.context.room?.timePerQuestion, state.context.questionStartedAt, send]);
 
-  // Advance from submitted at server time (reviewStartedAt + 8s) so big screen and players stay in sync
+  // Advance from submitted at server time (reviewStartedAt + ANSWER_REVEAL_SECONDS) so big screen and players stay in sync
   const submittedEnteredAtRef = useRef<number | null>(null);
   useEffect(() => {
     if (state.value !== 'submitted') {
@@ -221,8 +221,8 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     }
     const reviewStartedAt = state.context.reviewStartedAt;
     const deadlineMs = reviewStartedAt
-      ? reviewStartedAt.getTime() + 8000
-      : submittedEnteredAtRef.current + 8000;
+      ? reviewStartedAt.getTime() + ANSWER_REVEAL_SECONDS * 1000
+      : submittedEnteredAtRef.current + ANSWER_REVEAL_SECONDS * 1000;
     const check = () => {
       if (Date.now() >= deadlineMs) {
         send({ type: 'ADVANCE_AFTER_REVIEW' });
@@ -282,11 +282,23 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
       }
     }
 
+    // submitted state entry → Play explanation audio and lower background music volume
+    // Only when transitioning INTO submitted state, not when question index changes within submitted state
+    if (currentState === 'submitted' && prevState !== 'submitted') {
+      const currentQuestion = state.context.room?.questions?.[state.context.currentQuestionIndex];
+      if (currentQuestion?.explanationAudioUrl) {
+        // Lower background music volume during explanation
+        setMusicVolume(0.1);
+        // Play the explanation audio
+        playQuestionAudio(currentQuestion.explanationAudioUrl);
+      }
+    }
+
     // Update ref
     prevStateValueRef.current = currentState;
 
     // Restore background music volume when commentary finishes
-    if (!isCommentaryPlaying && prevState !== currentState && currentState !== 'question') {
+    if (!isCommentaryPlaying && prevState !== currentState && currentState !== 'question' && currentState !== 'submitted') {
       // Small delay to ensure audio has stopped
       const timer = setTimeout(() => {
         setMusicVolume(0.3);
@@ -918,7 +930,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
               <TriviCommentaryTextContainer>
                 <TriviCommentaryTitle>Awesome!</TriviCommentaryTitle>
                 <TriviCommentaryBody>
-                  Placeholder text for commentary
+                  Get ready to answer this question on your device!
                 </TriviCommentaryBody>
               </TriviCommentaryTextContainer>
             </TriviCommentaryCard>

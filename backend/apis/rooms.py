@@ -63,6 +63,7 @@ class QuestionResponse(BaseModel):
     correctAnswer: int
     explanation: Optional[str] = None
     questionAudioUrl: Optional[str] = None  # Pre-generated TTS URL
+    explanationAudioUrl: Optional[str] = None  # Pre-generated TTS URL for explanation
 
 
 class RoomResponse(BaseModel):
@@ -98,6 +99,11 @@ def generate_token() -> str:
 def _question_audio_url_key(question_id: str) -> str:
     """Get Redis key for question audio URL"""
     return f"question:{question_id}:audio_url"
+
+
+def _question_explanation_audio_url_key(question_id: str) -> str:
+    """Get Redis key for question explanation audio URL"""
+    return f"question:{question_id}:explanation_audio_url"
 
 
 def _commentary_key(room_id: str, commentary_id: str) -> str:
@@ -138,6 +144,43 @@ async def _generate_question_audio(question_text: str, question_id: str) -> Opti
         return None
 
 
+async def _generate_question_explanation_audio(explanation_text: str, question_id: str) -> Optional[str]:
+    """
+    Generate TTS audio for a question explanation and store in Redis. Returns audio URL.
+    
+    Note: This reads ONLY the explanation text as-is, without any prefix.
+    """
+    try:
+        if not explanation_text or not explanation_text.strip():
+            logger.info(f"No explanation text for question_id={question_id}, skipping audio generation")
+            return None
+        
+        # Log explanation being read
+        logger.info(f"Generating explanation audio for question_id={question_id}: {explanation_text[:100]}...")
+        
+        # Use question_id and explanation text as part of cache key for determinism
+        import hashlib
+        text_hash = hashlib.sha256(explanation_text.encode("utf-8")).hexdigest()[:16]
+        cache_key = f"question:explanation:tts:{text_hash}"
+        # Run synchronous TTS generation in thread pool to avoid blocking
+        # Pass explanation_text directly - no additions, just the explanation
+        def _generate():
+            return get_audio_url(
+                explanation_text.strip(),  # Just the explanation text, no extra content
+                cache_key,
+                voice_config={"style": "game_show_host"},
+            )
+        audio_url = await asyncio.to_thread(_generate)
+        # Store the URL in Redis for quick lookup
+        r = get_redis_client()
+        r.set(_question_explanation_audio_url_key(question_id), audio_url)
+        logger.info(f"Explanation audio generated successfully for question_id={question_id}")
+        return audio_url
+    except Exception as e:
+        logger.error(f"Failed to generate TTS for explanation {question_id}: {e}")
+        return None
+
+
 async def _generate_questions_audio(questions: list[dict], question_ids: list[str]) -> dict[str, str]:
     """Generate TTS audio for multiple questions in parallel. Returns dict mapping question_id -> audio_url."""
     tasks = [
@@ -150,6 +193,24 @@ async def _generate_questions_audio(questions: list[dict], question_ids: list[st
     for qid, result in zip(question_ids, results):
         if isinstance(result, Exception):
             logger.error(f"Error generating audio for question {qid}: {result}")
+            audio_urls[qid] = None
+        else:
+            audio_urls[qid] = result
+    return audio_urls
+
+
+async def _generate_questions_explanation_audio(questions: list[dict], question_ids: list[str]) -> dict[str, str]:
+    """Generate TTS audio for multiple question explanations in parallel. Returns dict mapping question_id -> explanation_audio_url."""
+    tasks = [
+        _generate_question_explanation_audio("Reveal the explanation for the question, adding a little bit of humor. Avoid saying thats correct or thats wrong and make it short: " + q.get("explanation", ""), qid)
+        for q, qid in zip(questions, question_ids)
+    ]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    audio_urls = {}
+    for qid, result in zip(question_ids, results):
+        if isinstance(result, Exception):
+            logger.error(f"Error generating explanation audio for question {qid}: {result}")
             audio_urls[qid] = None
         else:
             audio_urls[qid] = result
@@ -228,8 +289,9 @@ async def get_room(room_id: str):
             r = get_redis_client()
             questions_response = []
             for q in questions:
-                # Retrieve audio URL from Redis
+                # Retrieve audio URLs from Redis
                 audio_url = r.get(_question_audio_url_key(str(q.question_id)))
+                explanation_audio_url = r.get(_question_explanation_audio_url_key(str(q.question_id)))
                 questions_response.append(
                     QuestionResponse(
                         id=str(q.question_id),
@@ -238,7 +300,8 @@ async def get_room(room_id: str):
                         options=q.options,
                         correctAnswer=q.correct_answer,
                         explanation=q.explanation,
-                        questionAudioUrl=audio_url if audio_url else None
+                        questionAudioUrl=audio_url if audio_url else None,
+                        explanationAudioUrl=explanation_audio_url if explanation_audio_url else None
                     )
                 )
         
@@ -371,9 +434,10 @@ async def start_game(room_id: str, hostToken: Optional[str] = Header(None, alias
         
         created_questions = QuestionStore.create_questions(questions_to_create)
         
-        # Pre-generate TTS audio for all questions
+        # Pre-generate TTS audio for all questions and explanations
         question_ids = [str(q.question_id) for q in created_questions]
         await _generate_questions_audio(sample_questions, question_ids)
+        await _generate_questions_explanation_audio(sample_questions, question_ids)
         
         # Update room status (use UTC time for consistency across timezones)
         from datetime import timezone
@@ -668,9 +732,10 @@ async def submit_topic(
             
             created_questions = QuestionStore.create_questions(questions_to_create)
             
-            # Pre-generate TTS audio for all questions
+            # Pre-generate TTS audio for all questions and explanations
             question_ids = [str(q.question_id) for q in created_questions]
             await _generate_questions_audio(sample_questions, question_ids)
+            await _generate_questions_explanation_audio(sample_questions, question_ids)
             
             # Update room's current round
             from datetime import timezone
