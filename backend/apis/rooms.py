@@ -141,7 +141,7 @@ async def _generate_question_audio(question_text: str, question_id: str) -> Opti
 async def _generate_questions_audio(questions: list[dict], question_ids: list[str]) -> dict[str, str]:
     """Generate TTS audio for multiple questions in parallel. Returns dict mapping question_id -> audio_url."""
     tasks = [
-        _generate_question_audio(q["question"], qid)
+        _generate_question_audio("Read the question as is, don't answer it: " + q["question"], qid)
         for q, qid in zip(questions, question_ids)
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -514,32 +514,6 @@ async def submit_answer(
                 "questionId": request.questionId,
                 "reviewStartedAt": review_started_at.isoformat(),
             })
-            
-            # Generate and broadcast answer commentary
-            try:
-                correct_answer_option = question.options[question.correct_answer]
-                commentary_text = render_commentary("answer_revealed", {
-                    "answer": correct_answer_option,
-                    "explanation": question.explanation or "",
-                })
-                commentary_id = f"answer_{request.questionId}"
-                cache_key = _commentary_key(room_id, commentary_id)
-                audio_url = await asyncio.to_thread(
-                    lambda: get_audio_url(
-                        commentary_text,
-                        cache_key,
-                        voice_config={"style": "game_show_host"},
-                    )
-                )
-                await manager.broadcast_to_room(room_id, {
-                    "type": "commentary_ready",
-                    "eventType": "answer_revealed",
-                    "audioUrl": audio_url,
-                    "text": commentary_text,
-                    "commentaryId": commentary_id,
-                })
-            except Exception as e:
-                logger.error(f"Failed to generate answer_revealed commentary: {e}")
 
         return SubmitAnswerResponse(
             success=True,

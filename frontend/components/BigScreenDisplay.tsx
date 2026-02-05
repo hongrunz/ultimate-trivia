@@ -82,9 +82,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
 
   // Voice commentary hook (must be before callbacks/effects that use it)
   const {
-    playEventCommentary,
     playQuestionAudio,
-    playCommentary,
     isPlaying: isCommentaryPlaying,
   } = useVoiceCommentary(roomId, { volume: 0.8, autoPlay: true });
 
@@ -271,61 +269,21 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     const prevState = prevStateValueRef.current;
     const currentState = state.value;
 
-    // GAME_LOADED → Play "game started" commentary
-    if (state.context.room && prevState === 'loading' && currentState === 'question') {
-      playEventCommentary('game_started', {}, false);
-    }
 
-    // question state entry → Play question audio (pre-generated)
-    // Only play when transitioning INTO question state, not when question index changes within question state
+    // question state entry → Play question audio and lower background music volume
+    // Only when transitioning INTO question state, not when question index changes within question state
     if (currentState === 'question' && prevState !== 'question') {
       const currentQuestion = state.context.room?.questions?.[state.context.currentQuestionIndex];
       if (currentQuestion?.questionAudioUrl) {
         // Lower background music volume during question
         setMusicVolume(0.1);
+        // Play the question audio
         playQuestionAudio(currentQuestion.questionAudioUrl);
       }
     }
 
     // Update ref
     prevStateValueRef.current = currentState;
-
-    // submitted state entry → Generate and play answer commentary
-    if (currentState === 'submitted' && prevState !== 'submitted') {
-      const currentQuestion = state.context.room?.questions?.[state.context.currentQuestionIndex];
-      if (currentQuestion) {
-        const correctAnswer = currentQuestion.options[currentQuestion.correctAnswer];
-        playEventCommentary('answer_revealed', {
-          answer: correctAnswer,
-          explanation: currentQuestion.explanation || '',
-        }, false);
-      }
-    }
-
-    // roundFinished → Generate and play round completion commentary
-    if (currentState === 'roundFinished' && prevState !== 'roundFinished') {
-      playEventCommentary('round_finished', {
-        round: state.context.room?.currentRound || 1,
-      }, false);
-    }
-
-    // finished → Generate and play game completion + awards commentary
-    if (currentState === 'finished' && prevState !== 'finished') {
-      playEventCommentary('game_finished', {}, false);
-      // Fetch game stats for awards commentary
-      api.getGameStats(roomId).then((stats) => {
-        if (stats.awards && stats.awards.length > 0) {
-          stats.awards.forEach((award) => {
-            playEventCommentary('awards', {
-              players: award.playerNames.join(' and '),
-              award: award.awardName,
-            }, false);
-          });
-        }
-      }).catch((err) => {
-        console.error('Failed to fetch game stats for awards:', err);
-      });
-    }
 
     // Restore background music volume when commentary finishes
     if (!isCommentaryPlaying && prevState !== currentState && currentState !== 'question') {
@@ -335,7 +293,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [state.value, state.context, playEventCommentary, playQuestionAudio, isCommentaryPlaying, setMusicVolume, roomId]);
+  }, [state.value, state.context, playQuestionAudio, isCommentaryPlaying, setMusicVolume, roomId]);
 
   // Read room/players from previous screen (Start Game) so we can show the list immediately
   useEffect(() => {
@@ -549,14 +507,14 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     }
 
     // Handle commentary messages from WebSocket
-    if (message.type === 'commentary_ready' && message.audioUrl) {
-      playCommentary(message.audioUrl, message.text, false);
-    }
+    // if (message.type === 'commentary_ready' && message.audioUrl) {
+    //   playCommentary(message.audioUrl, message.text, false);
+    // }
 
-    if (message.type === 'commentary_event' && message.eventType) {
-      playEventCommentary(message.eventType, message.data || {}, message.priority || false);
-    }
-  }, [fetchRoom, fetchLeaderboard, roomId, send, playCommentary, playEventCommentary]);
+    // if (message.type === 'commentary_event' && message.eventType) {
+    //   playEventCommentary(message.eventType, message.data || {}, message.priority || false);
+    // }
+  }, [fetchRoom, fetchLeaderboard, roomId, send]);
 
   const handleRetryStartGame = useCallback(() => {
     setStartGameError(null);

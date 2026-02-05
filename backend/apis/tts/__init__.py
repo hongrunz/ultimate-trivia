@@ -209,7 +209,6 @@ async def _generate_tts_async(text: str, voice_config: Dict[str, Any] | None = N
         model = f"models/{model}"
     
     voice_name = voice_config.get("voiceName", "Zephyr")  # Default voice
-    mime_type = str(voice_config.get("mimeType") or DEFAULT_AUDIO_MIME)
 
     # Create client with v1beta API version (required for Live API)
     client = genai.Client(
