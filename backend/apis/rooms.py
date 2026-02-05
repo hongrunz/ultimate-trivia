@@ -11,6 +11,13 @@ from pydantic import BaseModel
 from storage.store import RoomStore, PlayerStore, QuestionStore, TopicStore
 from apis.llm.prompts import generate_questions_with_llm
 from apis.websocket import manager
+from apis.tts import get_audio_url
+from apis.tts.prompts import render_commentary
+from storage.client import get_redis_client
+import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/rooms", tags=["rooms"])
 
@@ -55,6 +62,7 @@ class QuestionResponse(BaseModel):
     options: list[str]
     correctAnswer: int
     explanation: Optional[str] = None
+    questionAudioUrl: Optional[str] = None  # Pre-generated TTS URL
 
 
 class RoomResponse(BaseModel):
@@ -85,6 +93,58 @@ def generate_token() -> str:
     """Generate a random token"""
     import secrets
     return secrets.token_urlsafe(32)
+
+
+def _question_audio_url_key(question_id: str) -> str:
+    """Get Redis key for question audio URL"""
+    return f"question:{question_id}:audio_url"
+
+
+def _commentary_key(room_id: str, commentary_id: str) -> str:
+    """Get Redis key for commentary audio"""
+    return f"room:{room_id}:commentary:{commentary_id}"
+
+
+async def _generate_question_audio(question_text: str, question_id: str) -> Optional[str]:
+    """Generate TTS audio for a question and store in Redis. Returns audio URL."""
+    try:
+        # Use question_id as part of cache key for determinism
+        import hashlib
+        text_hash = hashlib.sha256(question_text.encode("utf-8")).hexdigest()[:16]
+        cache_key = f"question:tts:{text_hash}"
+        # Run synchronous TTS generation in thread pool to avoid blocking
+        def _generate():
+            return get_audio_url(
+                question_text,
+                cache_key,
+                voice_config={"style": "game_show_host"},
+            )
+        audio_url = await asyncio.to_thread(_generate)
+        # Store the URL in Redis for quick lookup
+        r = get_redis_client()
+        r.set(_question_audio_url_key(question_id), audio_url)
+        return audio_url
+    except Exception as e:
+        logger.error(f"Failed to generate TTS for question {question_id}: {e}")
+        return None
+
+
+async def _generate_questions_audio(questions: list[dict], question_ids: list[str]) -> dict[str, str]:
+    """Generate TTS audio for multiple questions in parallel. Returns dict mapping question_id -> audio_url."""
+    tasks = [
+        _generate_question_audio(q["question"], qid)
+        for q, qid in zip(questions, question_ids)
+    ]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    audio_urls = {}
+    for qid, result in zip(question_ids, results):
+        if isinstance(result, Exception):
+            logger.error(f"Error generating audio for question {qid}: {result}")
+            audio_urls[qid] = None
+        else:
+            audio_urls[qid] = result
+    return audio_urls
 
 
 @router.post("", response_model=CreateRoomResponse, status_code=201)
@@ -156,17 +216,22 @@ async def get_room(room_id: str):
         questions_response = None
         if room.status in ["started", "finished"]:
             questions = QuestionStore.get_questions_by_room(room_uuid)
-            questions_response = [
-                QuestionResponse(
-                    id=str(q.question_id),
-                    question=q.question_text,
-                    topics=q.topics,
-                    options=q.options,
-                    correctAnswer=q.correct_answer,
-                    explanation=q.explanation
+            r = get_redis_client()
+            questions_response = []
+            for q in questions:
+                # Retrieve audio URL from Redis
+                audio_url = r.get(_question_audio_url_key(str(q.question_id)))
+                questions_response.append(
+                    QuestionResponse(
+                        id=str(q.question_id),
+                        question=q.question_text,
+                        topics=q.topics,
+                        options=q.options,
+                        correctAnswer=q.correct_answer,
+                        explanation=q.explanation,
+                        questionAudioUrl=audio_url if audio_url else None
+                    )
                 )
-                for q in questions
-            ]
         
         # Get collected topics for current round
         collected_topics = TopicStore.get_topics(room_uuid, room.current_round)
@@ -295,7 +360,11 @@ async def start_game(room_id: str, hostToken: Optional[str] = Header(None, alias
             for i, q in enumerate(sample_questions)
         ]
         
-        QuestionStore.create_questions(questions_to_create)
+        created_questions = QuestionStore.create_questions(questions_to_create)
+        
+        # Pre-generate TTS audio for all questions
+        question_ids = [str(q.question_id) for q in created_questions]
+        await _generate_questions_audio(sample_questions, question_ids)
         
         # Update room status (use UTC time for consistency across timezones)
         from datetime import timezone
@@ -567,7 +636,11 @@ async def submit_topic(
                 for i, q in enumerate(sample_questions)
             ]
             
-            QuestionStore.create_questions(questions_to_create)
+            created_questions = QuestionStore.create_questions(questions_to_create)
+            
+            # Pre-generate TTS audio for all questions
+            question_ids = [str(q.question_id) for q in created_questions]
+            await _generate_questions_audio(sample_questions, question_ids)
             
             # Update room's current round
             from datetime import timezone
@@ -723,6 +796,108 @@ async def get_game_stats(room_id: str):
     try:
         room_uuid = UUID(room_id)
         return _compute_game_stats_and_awards(room_uuid)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid room ID")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- TTS Commentary Endpoints ---
+
+class GenerateCommentaryRequest(BaseModel):
+    eventType: str
+    data: dict = {}
+
+
+class GenerateCommentaryResponse(BaseModel):
+    audioUrl: str
+    text: str
+    commentaryId: str
+
+
+@router.post("/{room_id}/generate-commentary", response_model=GenerateCommentaryResponse)
+async def generate_commentary(room_id: str, request: GenerateCommentaryRequest):
+    """Generate on-demand commentary for a game event"""
+    try:
+        room_uuid = UUID(room_id)
+        room = RoomStore.get_room(room_uuid)
+        
+        if not room:
+            raise HTTPException(status_code=404, detail="Room not found")
+        
+        # Render commentary text from template
+        try:
+            commentary_text = render_commentary(request.eventType, request.data)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        
+        # Generate unique commentary ID
+        import secrets
+        commentary_id = secrets.token_urlsafe(16)
+        
+        # Generate TTS audio (run in thread pool to avoid blocking)
+        cache_key = _commentary_key(room_id, commentary_id)
+        try:
+            def _generate():
+                return get_audio_url(
+                    commentary_text,
+                    cache_key,
+                    voice_config={"style": "game_show_host"},
+                )
+            audio_url = await asyncio.to_thread(_generate)
+        except Exception as e:
+            logger.error(f"Failed to generate TTS for commentary: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to generate audio: {str(e)}")
+        
+        return GenerateCommentaryResponse(
+            audioUrl=audio_url,
+            text=commentary_text,
+            commentaryId=commentary_id
+        )
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid room ID")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{room_id}/commentary/{commentary_id}")
+async def get_commentary_audio(room_id: str, commentary_id: str):
+    """Stream audio file for commentary"""
+    try:
+        room_uuid = UUID(room_id)
+        room = RoomStore.get_room(room_uuid)
+        
+        if not room:
+            raise HTTPException(status_code=404, detail="Room not found")
+        
+        # Retrieve audio from Redis
+        r = get_redis_client()
+        cache_key = _commentary_key(room_id, commentary_id)
+        cached_b64 = r.get(cache_key)
+        
+        if not cached_b64:
+            raise HTTPException(status_code=404, detail="Commentary audio not found")
+        
+        # Decode base64 and return as audio response
+        import base64
+        from fastapi.responses import Response
+        
+        audio_bytes = base64.b64decode(cached_b64)
+        
+        # Determine content type from audio URL format or default to wav
+        content_type = "audio/wav"
+        
+        return Response(
+            content=audio_bytes,
+            media_type=content_type,
+            headers={
+                "Content-Disposition": f'inline; filename="commentary_{commentary_id}.wav"'
+            }
+        )
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid room ID")
     except HTTPException:
