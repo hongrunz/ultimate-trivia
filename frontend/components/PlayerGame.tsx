@@ -13,7 +13,7 @@ import { useWebSocket } from '../lib/useWebSocket';
 import { useGameTimerDisplay } from '../lib/useGameTimerDisplay';
 import { useVoiceCommentary } from '../lib/useVoiceCommentary';
 import { useBackgroundMusic } from '../lib/useBackgroundMusic';
-import { gameStateMachine, type LeaderboardEntry } from '../lib/gameStateMachine';
+import { gameStateMachine, type LeaderboardEntry, ANSWER_REVEAL_SECONDS } from '../lib/gameStateMachine';
 import { 
   FormCard, 
   Title, 
@@ -193,7 +193,7 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
     }
   }, [state.value, state.context.room?.timePerQuestion, state.context.questionStartedAt, send]);
 
-  // Advance from submitted at server time (reviewStartedAt + 8s) so big screen and players stay in sync
+  // Advance from submitted at server time (reviewStartedAt + ANSWER_REVEAL_SECONDS) so big screen and players stay in sync
   const submittedEnteredAtRef = useRef<number | null>(null);
   useEffect(() => {
     if (state.value !== 'submitted') {
@@ -205,8 +205,8 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
     }
     const reviewStartedAt = state.context.reviewStartedAt;
     const deadlineMs = reviewStartedAt
-      ? reviewStartedAt.getTime() + 8000
-      : submittedEnteredAtRef.current + 8000;
+      ? reviewStartedAt.getTime() + ANSWER_REVEAL_SECONDS * 1000
+      : submittedEnteredAtRef.current + ANSWER_REVEAL_SECONDS * 1000;
     const check = () => {
       if (Date.now() >= deadlineMs) {
         send({ type: 'ADVANCE_AFTER_REVIEW' });
@@ -526,7 +526,7 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
     );
   }
 
-  // Answer submitted state (show results for 8 seconds)
+  // Answer submitted state (show results for ANSWER_REVEAL_SECONDS)
   if (state.value === 'submitted') {
     return (
       <>

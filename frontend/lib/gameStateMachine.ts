@@ -1,6 +1,8 @@
 import { setup, assign } from 'xstate';
 import { RoomResponse } from './api';
 
+export const ANSWER_REVEAL_SECONDS = 15;
+
 export interface LeaderboardEntry {
   playerId: string;
   rank: number;
@@ -198,7 +200,7 @@ export const gameStateMachine = setup({
               currentQuestionIndex: ({ context }) => context.currentQuestionIndex + 1,
               questionStartedAt: ({ context }) =>
                 context.reviewStartedAt
-                  ? new Date(context.reviewStartedAt.getTime() + 8000)
+                  ? new Date(context.reviewStartedAt.getTime() + ANSWER_REVEAL_SECONDS * 1000)
                   : new Date(),
             }),
           },

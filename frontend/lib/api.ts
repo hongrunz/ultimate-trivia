@@ -44,6 +44,7 @@ export interface Question {
   correctAnswer: number;
   explanation?: string;
   questionAudioUrl?: string | null;  // Pre-generated TTS URL
+  explanationAudioUrl?: string | null;  // Pre-generated TTS URL for explanation
 }
 
 export interface RoomResponse {
