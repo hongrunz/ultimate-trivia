@@ -38,8 +38,11 @@ try:
     from google import genai
     from google.genai import types
     GEMINI_TTS_AVAILABLE = True
+    # Cache for Gemini Live API client (reused across requests for lower latency)
+    _gemini_live_client: Optional[Any] = None
 except ImportError:
     GEMINI_TTS_AVAILABLE = False
+    _gemini_live_client = None
 
 
 # Load backend/.env first (with override) so GEMINI_API_KEY from backend/.env is always used
@@ -58,6 +61,8 @@ load_dotenv()  # cwd .env
 # TTS Configuration
 DEFAULT_TTS_PROVIDER = os.getenv("TTS_PROVIDER", "gcloud")  # "gcloud" or "gemini"
 DEFAULT_TTS_MODEL = os.getenv("GEMINI_TTS_MODEL_NAME", "gemini-2.5-flash-native-audio-preview-12-2025")
+# Pre-compute model name with prefix for faster lookups
+DEFAULT_TTS_MODEL_FULL = DEFAULT_TTS_MODEL if DEFAULT_TTS_MODEL.startswith("models/") else f"models/{DEFAULT_TTS_MODEL}"
 DEFAULT_AUDIO_MIME = os.getenv("TTS_AUDIO_MIME", "audio/wav")
 DEFAULT_CACHE_TTL_SECONDS = int(os.getenv("TTS_CACHE_TTL_SECONDS", "86400"))
 
@@ -76,6 +81,25 @@ def _get_gemini_api_key() -> str:
     if not api_key:
         raise ValueError("GEMINI_API_KEY environment variable is not set")
     return api_key
+
+
+def _get_gemini_live_client() -> genai.Client:
+    """
+    Get or create a cached Gemini Live API client for lower latency.
+    The client is reused across requests to avoid connection overhead.
+    """
+    global _gemini_live_client
+    
+    if _gemini_live_client is not None:
+        return _gemini_live_client
+    
+    # Create client with v1beta API version (required for Live API)
+    _gemini_live_client = genai.Client(
+        http_options={"api_version": "v1beta"},
+        api_key=_get_gemini_api_key()
+    )
+    
+    return _gemini_live_client
 
 
 def _stable_cache_key(prefix: str, text: str, voice_config: Dict[str, Any]) -> str:
@@ -219,26 +243,32 @@ def _list_available_models() -> list[str]:
 async def _generate_tts_async(text: str, voice_config: Dict[str, Any] | None = None) -> bytes:
     """
     Generate audio bytes from text using Gemini Live API (async).
+    Optimized for lower latency with client reuse and efficient processing.
     
     The native audio model requires the Live API, not generate_content.
     This is the async implementation that uses client.aio.live.connect().
     """
-    if not text or not text.strip():
+    # Early validation - strip once and reuse
+    text_stripped = text.strip() if text else ""
+    if not text_stripped:
         raise ValueError("text must be a non-empty string")
+    
     voice_config = voice_config or {}
 
-    model = str(voice_config.get("model") or DEFAULT_TTS_MODEL)
-    # Ensure model name has "models/" prefix if not present
-    if not model.startswith("models/"):
-        model = f"models/{model}"
+    # Optimize model name lookup - use pre-computed default if available
+    model = voice_config.get("model")
+    if model:
+        model = str(model)
+        # Ensure model name has "models/" prefix if not present
+        if not model.startswith("models/"):
+            model = f"models/{model}"
+    else:
+        model = DEFAULT_TTS_MODEL_FULL  # Use pre-computed model name
     
     voice_name = voice_config.get("voiceName", "Zephyr")  # Default voice
 
-    # Create client with v1beta API version (required for Live API)
-    client = genai.Client(
-        http_options={"api_version": "v1beta"},
-        api_key=_get_gemini_api_key()
-    )
+    # Use cached client for lower latency (avoids connection overhead)
+    client = _get_gemini_live_client()
 
     # Configure Live API for audio output
     config = types.LiveConnectConfig(
@@ -250,32 +280,38 @@ async def _generate_tts_async(text: str, voice_config: Dict[str, Any] | None = N
         ),
     )
 
-    logger.info("Generating TTS audio via Gemini Live API model=%s voice=%s", model, voice_name)
+    # Only log at info level if debug is enabled (reduce logging overhead)
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug("Generating TTS audio via Gemini Live API model=%s voice=%s", model, voice_name)
     
-    audio_chunks = []
+    # Use bytearray for more efficient chunk accumulation
+    audio_chunks = bytearray()
     try:
         async with client.aio.live.connect(model=model, config=config) as session:
-            # Send text input
-            await session.send(input=text.strip(), end_of_turn=True)
+            # Send text input (use pre-stripped text)
+            await session.send(input=text_stripped, end_of_turn=True)
             
-            # Receive audio response
+            # Receive audio response - process chunks as they arrive
             turn = session.receive()
             async for response in turn:
                 if response.data:
-                    # response.data is the audio bytes (PCM format)
-                    audio_chunks.append(response.data)
-                if response.text:
-                    # Log any text response (usually empty for TTS)
+                    # Append directly to bytearray for efficiency
+                    audio_chunks.extend(response.data)
+                # Skip text logging in production for performance
+                if response.text and logger.isEnabledFor(logging.DEBUG):
                     logger.debug(f"Text response: {response.text}")
             
-            # Combine all audio chunks
+            # Convert accumulated chunks to bytes
             if audio_chunks:
-                pcm_data = b''.join(audio_chunks)
-                logger.info(f"Generated {len(pcm_data)} bytes of PCM audio")
+                pcm_data = bytes(audio_chunks)
+                # Only log if debug enabled
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(f"Generated {len(pcm_data)} bytes of PCM audio")
                 # Convert PCM to WAV format for browser playback
                 # Gemini Live API returns PCM at 24kHz, 16-bit, mono
                 wav_data = _pcm_to_wav(pcm_data, sample_rate=24000, channels=1, sample_width=2)
-                logger.info(f"Converted to {len(wav_data)} bytes of WAV audio")
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(f"Converted to {len(wav_data)} bytes of WAV audio")
                 return wav_data
             else:
                 raise RuntimeError("No audio data received from Live API")
@@ -487,18 +523,21 @@ def _convert_audio_to_wav(audio_data: bytes, mime_type: str) -> bytes:
 
 def generate_tts(text: str, voice_config: Dict[str, Any] | None = None) -> bytes:
     """
-    Generate audio bytes from text. Uses Google Cloud TTS by default (fast, low latency).
-    Falls back to Gemini Live API if Google Cloud TTS is not available.
+    Generate audio bytes from text. Uses Gemini Live API as primary method.
+    Falls back to other TTS providers if Live API is not available.
     
     voice_config is passed through best-effort; supported keys vary by provider.
-    For Google Cloud TTS:
+    For Gemini Live API (primary):
+      - model: override model name (default: "gemini-2.5-flash-native-audio-preview-12-2025")
+      - voiceName: voice name (default: "Zephyr")
+    For Gemini API (fallback):
+      - model: override model name
+      - voiceName: voice name (default: "Leda")
+    For Google Cloud TTS (fallback):
       - voiceName: voice name (default: "en-US-Studio-O" - bright, energetic voice)
       - languageCode: language code (default: "en-US")
       - ssmlGender: "FEMALE", "MALE", or "NEUTRAL" (default: "FEMALE")
       - style: "game_show_host" will use a bright, energetic voice
-    For Gemini TTS:
-      - model: override model name
-      - voiceName: voice name (default: "Zephyr")
     """
     if not text or not text.strip():
         raise ValueError("text must be a non-empty string")
@@ -506,34 +545,7 @@ def generate_tts(text: str, voice_config: Dict[str, Any] | None = None) -> bytes
     voice_config = voice_config or {}
     provider = voice_config.get("provider") or DEFAULT_TTS_PROVIDER
     
-    # Try Gemini API first (for Leda voice)
-    # This is the primary method now since we're using Gemini API key
-    if GEMINI_TTS_AVAILABLE:
-        try:
-            # Check if we should use Gemini API (for Leda voice or if explicitly requested)
-            style = voice_config.get("style")
-            voice_name = voice_config.get("voiceName") or DEFAULT_GCLOUD_VOICE_NAME
-            if style == "game_show_host" or voice_name == "Leda" or provider == "gemini":
-                # Use Gemini API for Leda voice
-                return _generate_tts_gcloud_v1beta1(
-                    text,
-                    voice_name if voice_name == "Leda" else "Leda",
-                    voice_config.get("languageCode") or DEFAULT_GCLOUD_LANGUAGE_CODE,
-                    voice_config.get("modelName") or DEFAULT_GCLOUD_MODEL_NAME,
-                    voice_config.get("prompt") or DEFAULT_GCLOUD_TTS_PROMPT,
-                    voice_config
-                )
-        except Exception as e:
-            logger.warning(f"Gemini API TTS failed: {e}, falling back to standard TTS")
-    
-    # Try Google Cloud TTS (standard API, no service account needed for basic usage)
-    if provider == "gcloud" and GCLOUD_TTS_AVAILABLE:
-        try:
-            return _generate_tts_gcloud(text, voice_config)
-        except Exception as e:
-            logger.warning(f"Google Cloud TTS failed: {e}, falling back to Gemini Live API")
-    
-    # Fallback to Gemini Live API
+    # Primary: Try Gemini Live API first
     if GEMINI_TTS_AVAILABLE:
         import asyncio
         import concurrent.futures
@@ -554,7 +566,33 @@ def generate_tts(text: str, voice_config: Dict[str, Any] | None = None) -> bytes
                 # No event loop, create new one
                 return asyncio.run(_generate_tts_async(text, voice_config))
         except Exception as e:
-            logger.error(f"Failed to generate TTS audio with Gemini: {e}")
+            logger.warning(f"Gemini Live API TTS failed: {e}, falling back to other methods")
+    
+    # Fallback 1: Try Gemini API with generate_content_stream (for Leda voice)
+    if GEMINI_TTS_AVAILABLE:
+        try:
+            # Check if we should use Gemini API (for Leda voice or if explicitly requested)
+            style = voice_config.get("style")
+            voice_name = voice_config.get("voiceName") or DEFAULT_GCLOUD_VOICE_NAME
+            if style == "game_show_host" or voice_name == "Leda" or provider == "gemini":
+                # Use Gemini API for Leda voice
+                return _generate_tts_gcloud_v1beta1(
+                    text,
+                    voice_name if voice_name == "Leda" else "Leda",
+                    voice_config.get("languageCode") or DEFAULT_GCLOUD_LANGUAGE_CODE,
+                    voice_config.get("modelName") or DEFAULT_GCLOUD_MODEL_NAME,
+                    voice_config.get("prompt") or DEFAULT_GCLOUD_TTS_PROMPT,
+                    voice_config
+                )
+        except Exception as e:
+            logger.warning(f"Gemini API TTS failed: {e}, falling back to Google Cloud TTS")
+    
+    # Fallback 2: Try Google Cloud TTS (standard API, no service account needed for basic usage)
+    if provider == "gcloud" and GCLOUD_TTS_AVAILABLE:
+        try:
+            return _generate_tts_gcloud(text, voice_config)
+        except Exception as e:
+            logger.warning(f"Google Cloud TTS failed: {e}")
     
     # Return empty WAV as fallback
     logger.error("No TTS provider available")

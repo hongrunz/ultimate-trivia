@@ -116,6 +116,7 @@ async def _generate_question_audio(question_text: str, question_id: str) -> Opti
     Generate TTS audio for a question and store in Redis. Returns audio URL.
     
     Note: This reads ONLY the question text as-is, without any prefix, answer, or explanation.
+    The TTS is instructed to only read the question verbatim, not to answer it.
     """
     try:
         # Log question being read
@@ -126,10 +127,13 @@ async def _generate_question_audio(question_text: str, question_id: str) -> Opti
         text_hash = hashlib.sha256(question_text.encode("utf-8")).hexdigest()[:16]
         cache_key = f"question:tts:{text_hash}"
         # Run synchronous TTS generation in thread pool to avoid blocking
-        # Pass question_text directly - no additions, no answers, just the question
+        # Pass ONLY the question text - TTS will read it verbatim without answering
+        # The question text itself should be a standalone question, not a prompt for the TTS
+        question_only = "Read the question as is and do not answer it: " + question_text.strip()
+        
         def _generate():
             return get_audio_url(
-                question_text.strip(),  # Just the question text, no extra content
+                question_only,  # Only the question text - TTS reads verbatim
                 cache_key,
                 voice_config={"style": "game_show_host"},
             )
@@ -201,8 +205,9 @@ async def _generate_questions_audio(questions: list[dict], question_ids: list[st
 
 async def _generate_questions_explanation_audio(questions: list[dict], question_ids: list[str]) -> dict[str, str]:
     """Generate TTS audio for multiple question explanations in parallel. Returns dict mapping question_id -> explanation_audio_url."""
+    explanation_prefix = "Read the text as is: "
     tasks = [
-        _generate_question_explanation_audio(q.get("explanation", ""), qid)
+        _generate_question_explanation_audio(explanation_prefix + q.get("explanation", ""), qid)
         for q, qid in zip(questions, question_ids)
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
