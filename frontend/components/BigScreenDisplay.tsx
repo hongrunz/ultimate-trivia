@@ -10,6 +10,7 @@ import { useWebSocket } from '../lib/useWebSocket';
 import { useBackgroundMusic } from '../lib/useBackgroundMusic';
 import { useGameTimerDisplay } from '../lib/useGameTimerDisplay';
 import { useVoiceCommentary } from '../lib/useVoiceCommentary';
+import { usePlayAudio } from '../lib/playAudio';
 import { gameStateMachine, type LeaderboardEntry, ANSWER_REVEAL_SECONDS } from '../lib/gameStateMachine';
 import MusicControl from './MusicControl';
 import { GameTitle, GameTitleImage, PlayerListTitle, PlayerListItem, PlayerListItemAvatar, PlayerListItemName, PlayerListContainer } from './styled/GameComponents';
@@ -85,6 +86,9 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     playQuestionAudio,
     isPlaying: isCommentaryPlaying,
   } = useVoiceCommentary(roomId, { volume: 0.8, autoPlay: true });
+
+  // Play welcome audio once on mount
+  usePlayAudio('/assets/audio/start-game.wav', { volume: 0.8, autoPlay: true });
 
   // Helper function to map leaderboard data to UI format
   const mapLeaderboardData = useCallback((

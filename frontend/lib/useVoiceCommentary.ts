@@ -68,13 +68,18 @@ export function useVoiceCommentary(
     const handleCanPlay = () => {
       setIsLoaded(true);
       if (autoPlay && !isMuted) {
-        audio.play().catch((err) => {
-          console.warn('Failed to play commentary audio:', err);
-          // Continue to next item if play fails
-          isPlayingRef.current = false;
-          setCurrentCommentary(null);
-          processQueue();
-        });
+        console.log('▶️ Attempting to play audio...');
+        audio.play()
+          .then(() => {
+            console.log('✅ Audio playing successfully');
+          })
+          .catch((err) => {
+            console.warn('❌ Failed to play commentary audio:', err);
+            // Continue to next item if play fails
+            isPlayingRef.current = false;
+            setCurrentCommentary(null);
+            processQueue();
+          });
       }
     };
 
