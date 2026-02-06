@@ -184,7 +184,7 @@ async def _generate_question_explanation_audio(explanation_text: str, question_i
 async def _generate_questions_audio(questions: list[dict], question_ids: list[str]) -> dict[str, str]:
     """Generate TTS audio for multiple questions in parallel. Returns dict mapping question_id -> audio_url."""
     tasks = [
-        _generate_question_audio("Read the question as is, don't answer it: " + q["question"], qid)
+        _generate_question_audio(q["question"], qid)
         for q, qid in zip(questions, question_ids)
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -202,7 +202,7 @@ async def _generate_questions_audio(questions: list[dict], question_ids: list[st
 async def _generate_questions_explanation_audio(questions: list[dict], question_ids: list[str]) -> dict[str, str]:
     """Generate TTS audio for multiple question explanations in parallel. Returns dict mapping question_id -> explanation_audio_url."""
     tasks = [
-        _generate_question_explanation_audio("Reveal the explanation for the question, adding a little bit of humor. Avoid saying thats correct or thats wrong and make it short: " + q.get("explanation", ""), qid)
+        _generate_question_explanation_audio(q.get("explanation", ""), qid)
         for q, qid in zip(questions, question_ids)
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
