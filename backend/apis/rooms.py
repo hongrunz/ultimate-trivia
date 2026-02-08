@@ -29,7 +29,7 @@ class CreateRoomRequest(BaseModel):
     questionsPerRound: int
     timePerQuestion: int
     numRounds: int = 1  # Number of rounds in the game
-    sessionMode: Optional[str] = 'player'  # 'player' or 'display'
+    sessionMode: Optional[str] = 'display'  # Always 'display' mode (big screen)
 
 
 class CreateRoomResponse(BaseModel):
@@ -251,10 +251,8 @@ async def create_room(request: CreateRoomRequest):
                 if topic:
                     TopicStore.add_topic(room.room_id, uuid4(), topic, round=1)
         
-        # Only create a player for the host if in 'player' mode (mobile)
-        # In 'display' mode (web/big screen), the host is not a player
-        if request.sessionMode == 'player':
-            PlayerStore.create_player(room.room_id, request.name)
+        # In 'display' mode (big screen), the host is not a player
+        # Host only manages the game from the big screen
         
         return CreateRoomResponse(
             roomId=str(room.room_id),
@@ -403,8 +401,7 @@ async def start_game(room_id: str, hostToken: Optional[str] = Header(None, alias
             raise HTTPException(status_code=400, detail=f"Room is already {room.status}")
         
         # Check if room has players
-        # Note: In display mode, the host is not a player, so we need at least 1 player
-        # In player mode, the host is already a player, so we should have at least 1 player too
+        # In display mode, the host is not a player, so we need at least 1 player
         players = PlayerStore.get_players_by_room(room_uuid)
         if not players:
             raise HTTPException(status_code=400, detail="Cannot start game without players. Please wait for players to join.")
@@ -449,13 +446,8 @@ async def start_game(room_id: str, hostToken: Optional[str] = Header(None, alias
         started_at = datetime.now(timezone.utc)
         RoomStore.update_room_status(room_uuid, "started", started_at)
         
-        # Find the host's player record to get their player token (for mobile mode)
         # In display mode, host is not a player, so host_player will be None
         host_player = None
-        for player in players:
-            if player.player_name == room.host_name:
-                host_player = player
-                break
         
         # Broadcast game started event with timestamp for timer sync
         await manager.broadcast_to_room(room_id, {

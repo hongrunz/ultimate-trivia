@@ -8,11 +8,11 @@ export const MusicControlContainer = styled.div`
   z-index: 1000;
 `;
 
-export const MusicButton = styled.button<{ $isMuted: boolean }>`
-  width: 3.5rem;
-  height: 3.5rem;
+export const MusicButton = styled.button<{ $isMuted: boolean; $size?: 'small' | 'normal' }>`
+  width: ${props => props.$size === 'small' ? '2.5rem' : '3.5rem'};
+  height: ${props => props.$size === 'small' ? '2.5rem' : '3.5rem'};
   border-radius: 50%;
-  border: 2px solid ${colors.surface};
+  border: ${props => props.$size === 'small' ? '1.5px' : '2px'} solid ${colors.surface};
   background-color: ${colors.accent};
   opacity: 0.9;
   color: ${colors.surface};
@@ -21,7 +21,7 @@ export const MusicButton = styled.button<{ $isMuted: boolean }>`
   align-items: center;
   justify-content: center;
   font-family: ${typography.fontFamily.dmSans};
-  font-size: ${typography.fontSize.displaylg};
+  font-size: ${props => props.$size === 'small' ? '1.25rem' : typography.fontSize.displaylg};
   font-weight: ${typography.fontWeight.normal};
   line-height: ${typography.lineHeight.normal};
   transition: all 0.2s ease;
@@ -43,17 +43,21 @@ export const MusicButton = styled.button<{ $isMuted: boolean }>`
   }
 
   /* Add slash effect when muted */
-  ${props => props.$isMuted && `
-    &::after {
-      content: '';
-      position: absolute;
-      width: 2.5rem;
-      height: 2px;
-      background-color: ${colors.red[500]};
-      transform: rotate(-45deg);
-      box-shadow: 0 0 3px rgba(0, 0, 0, 0.5);
-    }
-  `}
+  ${props => {
+    if (!props.$isMuted) return '';
+    const slashWidth = props.$size === 'small' ? '1.75rem' : '2.5rem';
+    return `
+      &::after {
+        content: '';
+        position: absolute;
+        width: ${slashWidth};
+        height: 2px;
+        background-color: ${colors.red[500]};
+        transform: rotate(-45deg);
+        box-shadow: 0 0 3px rgba(0, 0, 0, 0.5);
+      }
+    `;
+  }}
 `;
 
 export const Tooltip = styled.div<{ $show: boolean }>`

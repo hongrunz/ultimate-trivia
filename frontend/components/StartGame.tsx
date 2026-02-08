@@ -39,7 +39,6 @@ import { api, tokenStorage, RoomResponse } from '../lib/api';
 import { useWebSocket } from '../lib/useWebSocket';
 import { useBackgroundMusic } from '../lib/useBackgroundMusic';
 import MusicControl from './MusicControl';
-import { getSessionMode } from '../lib/deviceDetection';
 import { ErrorText } from './styled/ErrorComponents';
 import { BigScreenNotice } from './styled/InfoComponents';
 import { SuccessText, MutedText } from './styled/StatusComponents';
@@ -54,11 +53,6 @@ export default function StartGame({ roomId }: StartGameProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState('');
-  const [sessionMode, setSessionMode] = useState<'player' | 'display'>('player');
-
-  useEffect(() => {
-    setSessionMode(getSessionMode());
-  }, []);
 
   const roomUrl = useMemo(() => {
     if (typeof window !== 'undefined') {
@@ -100,14 +94,10 @@ export default function StartGame({ roomId }: StartGameProps) {
         fetchRoom();
         break;
       case 'game_started':
-        if (sessionMode === 'display') {
-          router.push(`/host/${roomId}/display`);
-        } else {
-          router.push(`/game/${roomId}`);
-        }
+        router.push(`/host/${roomId}/display`);
         break;
     }
-  }, [roomId, router, sessionMode, fetchRoom]);
+  }, [roomId, router, fetchRoom]);
 
   useWebSocket(roomId, {
     onMessage: handleWebSocketMessage,
@@ -137,42 +127,30 @@ export default function StartGame({ roomId }: StartGameProps) {
 
     setError('');
 
-    if (sessionMode === 'display') {
-      // Pass current room/players to display so it can show the list immediately while loading
-      if (room) {
-        try {
-          sessionStorage.setItem('displayInitialRoom', JSON.stringify({ roomId, room }));
-        } catch {
-          // ignore
-        }
+    // Pass current room/players to display so it can show the list immediately while loading
+    if (room) {
+      try {
+        sessionStorage.setItem('displayInitialRoom', JSON.stringify({ roomId, room }));
+      } catch {
+        // ignore
       }
-      router.push(`/host/${roomId}/display`);
-      api.startGame(roomId, hostToken).then((response) => {
-        if (response.playerToken) {
-          tokenStorage.setPlayerToken(roomId, response.playerToken);
-        }
-      }).catch((err) => {
-        const message = err instanceof Error ? err.message : 'Failed to start game';
-        try {
-          sessionStorage.setItem('startGameError', JSON.stringify({ roomId, message }));
-        } catch {
-          // ignore storage errors
-        }
-      });
-      return;
     }
-
+    router.push(`/host/${roomId}/display`);
     setIsStarting(true);
-    try {
-      const response = await api.startGame(roomId, hostToken);
+    api.startGame(roomId, hostToken).then((response) => {
       if (response.playerToken) {
         tokenStorage.setPlayerToken(roomId, response.playerToken);
       }
-      router.push(`/game/${roomId}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start game. Please try again.');
+    }).catch((err) => {
+      const message = err instanceof Error ? err.message : 'Failed to start game';
+      setError(message);
       setIsStarting(false);
-    }
+      try {
+        sessionStorage.setItem('startGameError', JSON.stringify({ roomId, message }));
+      } catch {
+        // ignore storage errors
+      }
+    });
   };
 
   const renderRightContent = () => {
@@ -213,13 +191,11 @@ export default function StartGame({ roomId }: StartGameProps) {
       <StartGameFormCard>
         <CreateGameSectionTitle>Room Ready</CreateGameSectionTitle>
 
-        {sessionMode === 'display' && (
-          <BigScreenNotice>
-            <strong>Keep this screen on!</strong>
-            <br />
-            This screen will display the questions and the leaderboard. Use your own device to join the game and submit answers.
-          </BigScreenNotice>
-        )}
+        <BigScreenNotice>
+          <strong>Keep this screen on!</strong>
+          <br />
+          This screen will display the questions and the leaderboard. Use your own device to join the game and submit answers.
+        </BigScreenNotice>
 
         <QRCodeContainer>
           {roomUrl && <QRCodeSVG value={roomUrl} size={160} />}

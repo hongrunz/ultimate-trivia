@@ -14,6 +14,7 @@ import { useGameTimerDisplay } from '../lib/useGameTimerDisplay';
 import { useVoiceCommentary } from '../lib/useVoiceCommentary';
 import { useBackgroundMusic } from '../lib/useBackgroundMusic';
 import { gameStateMachine, type LeaderboardEntry, ANSWER_REVEAL_SECONDS } from '../lib/gameStateMachine';
+import MusicControl from './MusicControl';
 import { 
   FormCard, 
   Title, 
@@ -46,6 +47,8 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
 
   // Live topic list for "newRound" screen (built from websocket events)
   const [newRoundTopics, setNewRoundTopics] = useState<string[]>([]);
+  // Track if questions are being generated
+  const [isGeneratingQuestions, setIsGeneratingQuestions] = useState(false);
   // Points gained this question (for "+N" animation after answer reveal); key = playerId
   const [pointsGained, setPointsGained] = useState<Record<string, number>>({});
 
@@ -54,11 +57,14 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
 
   // Voice commentary hook (must be before callbacks that use it)
   const {
+    playQuestionAudio,
+    playEventCommentary,
+    playCommentary,
     isPlaying: isCommentaryPlaying,
   } = useVoiceCommentary(roomId, { volume: 0.8, autoPlay: true });
 
-  // Background music hook (for coordination) - only used for volume control
-  const { setVolume: setMusicVolume } = useBackgroundMusic('/background-music.mp3', {
+  // Background music hook
+  const { isMuted, toggleMute, isLoaded, setVolume: setMusicVolume } = useBackgroundMusic('/background-music.mp3', {
     autoPlay: true,
     loop: true,
     volume: 0.3,
@@ -255,6 +261,12 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
       return;
     }
     
+    if (message.type === 'all_topics_submitted') {
+      // All topics collected - Trivi is now generating questions
+      setIsGeneratingQuestions(true);
+      return;
+    }
+    
     if (message.type === 'round_changed') {
       submittedForQuestionRef.current.clear();
       // New round has started - update timer sync and fetch updated room data
@@ -267,6 +279,7 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
       }
       // Reset topic list once we move into the next round questions
       setNewRoundTopics([]);
+      setIsGeneratingQuestions(false); // Reset generating state
       return;
     }
     
@@ -335,7 +348,20 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
       send({ type: 'PLAYER_JOINED', player: message.player });
     }
 
-  }, [fetchRoom, roomId, send]);
+    // Handle commentary messages from WebSocket
+    if (message.type === 'commentary_ready' && message.audioUrl) {
+      // Lower background music volume during commentary
+      setMusicVolume(0.1);
+      playCommentary(message.audioUrl, message.text, false);
+    }
+
+    if (message.type === 'commentary_event' && message.eventType) {
+      // Lower background music volume during commentary
+      setMusicVolume(0.1);
+      playEventCommentary(message.eventType, message.data || {}, message.priority || false);
+    }
+
+  }, [fetchRoom, roomId, send, playCommentary, playEventCommentary, setMusicVolume]);
 
   // Fetch leaderboard only when we enter answer-reveal (submitted) state; track points gained for animation
   const prevStateRef = useRef<string | undefined>(undefined);
@@ -360,21 +386,37 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
       if (currentQuestion?.questionAudioUrl) {
         // Lower background music volume during question
         setMusicVolume(0.1);
+        // Play the question audio
+        playQuestionAudio(currentQuestion.questionAudioUrl);
+      }
+    }
+
+    // submitted state entry → Play explanation audio (pre-generated)
+    // Only play when transitioning INTO submitted state, not when question index changes within submitted state
+    if (currentState === 'submitted' && prevState !== 'submitted') {
+      const currentQuestion = state.context.room?.questions?.[state.context.currentQuestionIndex];
+      if (currentQuestion?.explanationAudioUrl) {
+        // Lower background music volume during explanation
+        setMusicVolume(0.1);
+        // Play the explanation audio
+        playQuestionAudio(currentQuestion.explanationAudioUrl);
       }
     }
 
     // Update ref
     prevStateValueRef.current = currentState;
+  }, [state.value, state.context, playQuestionAudio, setMusicVolume]);
 
-    // Restore background music volume when commentary finishes
-    if (!isCommentaryPlaying && prevState !== currentState && currentState !== 'question') {
+  // Restore background music volume when commentary finishes
+  useEffect(() => {
+    if (!isCommentaryPlaying) {
       // Small delay to ensure audio has stopped
       const timer = setTimeout(() => {
         setMusicVolume(0.3);
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [state.value, state.context, isCommentaryPlaying, setMusicVolume, roomId]);
+  }, [isCommentaryPlaying, setMusicVolume]);
 
   // WebSocket connection
   useWebSocket(roomId, {
@@ -429,54 +471,78 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
   // No player token error - must join first
   if (hasNoToken) {
     return (
-      <PlayerPageContainer>
+      <>
+        <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} size="small" />
+        <PlayerPageContainer>
           <PlayerHeader />
           <PlayerPageContent>
-          <FormCard>
-            <Title>Access Denied</Title>
-            <ErrorBox>
-              <ErrorIcon>🚫</ErrorIcon>
-              <ErrorHeading>You must join the game first!</ErrorHeading>
-              <ErrorMessage>
-                You don&apos;t have permission to access this game. 
-                Please join the game using your name.
-              </ErrorMessage>
-            </ErrorBox>
-            <ButtonContainerCenter>
-              <ButtonPrimary onClick={handleJoinRedirect}>
-                Join Game
-              </ButtonPrimary>
-            </ButtonContainerCenter>
-          </FormCard>
+            <FormCard>
+              <Title>Access Denied</Title>
+              <ErrorBox>
+                <ErrorIcon>🚫</ErrorIcon>
+                <ErrorHeading>You must join the game first!</ErrorHeading>
+                <ErrorMessage>
+                  You don&apos;t have permission to access this game. 
+                  Please join the game using your name.
+                </ErrorMessage>
+              </ErrorBox>
+              <ButtonContainerCenter>
+                <ButtonPrimary onClick={handleJoinRedirect}>
+                  Join Game
+                </ButtonPrimary>
+              </ButtonContainerCenter>
+            </FormCard>
           </PlayerPageContent>
         </PlayerPageContainer>
+      </>
     );
   }
 
   // Loading state
   if (state.value === 'loading') {
-    return <div style={centeredScreenStyle}>Loading game...</div>;
+    return (
+      <>
+        <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} size="small" />
+        <div style={centeredScreenStyle}>Loading game...</div>
+      </>
+    );
   }
 
   // Error state
   if (state.value === 'error' || state.context.error) {
-    return <div style={centeredScreenStyle}>Error: {state.context.error}</div>;
+    return (
+      <>
+        <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} size="small" />
+        <div style={centeredScreenStyle}>Error: {state.context.error}</div>
+      </>
+    );
   }
 
   // Waiting for game to start
   if (!state.context.room?.questions?.length) {
-    return <div style={centeredScreenStyle}>Waiting for game to start...</div>;
+    return (
+      <>
+        <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} size="small" />
+        <div style={centeredScreenStyle}>Waiting for game to start...</div>
+      </>
+    );
   }
 
   // Check for server sync during active gameplay
   if ((state.value === 'question' || state.value === 'submitted') && !state.context.gameStartedAt) {
-    return <div style={centeredScreenStyle}>Synchronizing with server...</div>;
+    return (
+      <>
+        <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} size="small" />
+        <div style={centeredScreenStyle}>Synchronizing with server...</div>
+      </>
+    );
   }
 
   // Round finished state (show between rounds)
   if (state.value === 'roundFinished') {
     return (
       <>
+        <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} size="small" />
         <RoundFinished
           currentRound={state.context.room.currentRound}
           totalRounds={state.context.room.numRounds}
@@ -491,11 +557,13 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
   if (state.value === 'newRound') {
     return (
       <>
+        <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} size="small" />
         <NewRoundTopicSubmission
           currentRound={state.context.room.currentRound + 1}
           totalRounds={state.context.room.numRounds}
           onSubmitTopic={handleSubmitTopic}
           collectedTopics={newRoundTopics}
+          isGeneratingQuestions={isGeneratingQuestions}
         />
       </>
     );
@@ -505,6 +573,7 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
   if (state.value === 'finished') {
     return (
       <>
+        <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} size="small" />
         <GameFinished
           roomId={roomId}
           totalQuestions={state.context.room.questionsPerRound}
@@ -520,9 +589,12 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
   // Question loading state
   if (!currentQuestion) {
     return (
-      <CenteredMessage>
-        <p>Loading question {currentQuestionIndex + 1}...</p>
-      </CenteredMessage>
+      <>
+        <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} size="small" />
+        <CenteredMessage>
+          <p>Loading question {currentQuestionIndex + 1}...</p>
+        </CenteredMessage>
+      </>
     );
   }
 
@@ -530,6 +602,7 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
   if (state.value === 'submitted') {
     return (
       <>
+        <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} size="small" />
         <SubmittedScreen
           currentQuestion={currentQuestionIndex + 1}
           totalQuestions={state.context.room.questionsPerRound}
@@ -552,6 +625,7 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
   // Active question state
   return (
     <>
+      <MusicControl isMuted={isMuted} onToggle={toggleMute} disabled={!isLoaded} size="small" />
       <QuestionScreen
         currentQuestion={currentQuestionIndex + 1}
         totalQuestions={state.context.room.questionsPerRound}

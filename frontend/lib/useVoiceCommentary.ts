@@ -107,20 +107,34 @@ export function useVoiceCommentary(
       processQueue();
     };
 
-    const handleError = () => {
-      console.error('Error playing commentary audio');
+    const handleError = (event?: Event) => {
+      // Log error details for debugging, but don't throw
+      const errorMessage = event && 'message' in event ? String(event.message) : 'Unknown error';
+      const audioUrl = nextItem?.audioUrl || 'unknown';
+      console.warn('Failed to play commentary audio:', {
+        audioUrl,
+        error: errorMessage,
+        errorCode: audio.error?.code,
+        networkState: audio.networkState,
+        readyState: audio.readyState,
+      });
       setIsPlaying(false);
       isPlayingRef.current = false;
       setCurrentCommentary(null);
       currentItemRef.current = null;
       // Clean up and continue
-      audio.removeEventListener('canplay', handleCanPlay);
-      audio.removeEventListener('play', handlePlay);
-      audio.removeEventListener('pause', handlePause);
-      audio.removeEventListener('ended', handleEnded);
-      audio.removeEventListener('error', handleError);
-      audio.pause();
-      audio.src = '';
+      try {
+        audio.removeEventListener('canplay', handleCanPlay);
+        audio.removeEventListener('play', handlePlay);
+        audio.removeEventListener('pause', handlePause);
+        audio.removeEventListener('ended', handleEnded);
+        audio.removeEventListener('error', handleError);
+        audio.pause();
+        audio.src = '';
+      } catch (cleanupError) {
+        // Ignore cleanup errors
+      }
+      // Process next item in queue
       processQueue();
     };
 

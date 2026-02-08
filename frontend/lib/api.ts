@@ -9,7 +9,7 @@ export interface CreateRoomRequest {
   topics?: string[];
   questionsPerRound: number;
   timePerQuestion: number;
-  sessionMode?: 'player' | 'display'; // 'player' = mobile host joins as player, 'display' = web big screen
+  sessionMode?: 'display'; // Always 'display' mode (big screen)
   numRounds: number;
 }
 

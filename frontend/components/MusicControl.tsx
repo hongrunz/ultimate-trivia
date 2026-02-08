@@ -7,9 +7,10 @@ interface MusicControlProps {
   isMuted: boolean;
   onToggle: () => void;
   disabled?: boolean;
+  size?: 'small' | 'normal';
 }
 
-export default function MusicControl({ isMuted, onToggle, disabled = false }: MusicControlProps) {
+export default function MusicControl({ isMuted, onToggle, disabled = false, size = 'normal' }: MusicControlProps) {
   const [showTooltip, setShowTooltip] = useState(false);
 
   return (
@@ -21,6 +22,7 @@ export default function MusicControl({ isMuted, onToggle, disabled = false }: Mu
         onClick={onToggle}
         disabled={disabled}
         $isMuted={isMuted}
+        $size={size}
         aria-label={isMuted ? 'Unmute music' : 'Mute music'}
       >
         ♪

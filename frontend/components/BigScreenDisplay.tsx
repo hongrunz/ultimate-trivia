@@ -65,6 +65,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
   // Local state for topic submission tracking (not part of game state machine)
   const [topicSubmissionCount, setTopicSubmissionCount] = useState(0);
   const [collectedTopics, setCollectedTopics] = useState<string[]>([]);
+  const [isGeneratingQuestions, setIsGeneratingQuestions] = useState(false);
   // Load timeout: show error + retry if we're stuck in loading without room data
   const [loadTimedOut, setLoadTimedOut] = useState(false);
   // Start game error (e.g. Gemini API invalid) – from sessionStorage when display loads after failed start
@@ -84,6 +85,8 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
   // Voice commentary hook (must be before callbacks/effects that use it)
   const {
     playQuestionAudio,
+    playEventCommentary,
+    playCommentary,
     isPlaying: isCommentaryPlaying,
   } = useVoiceCommentary(roomId, { volume: 0.8, autoPlay: true });
 
@@ -445,6 +448,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
       }
       setTopicSubmissionCount(0); // Reset submission count
       setCollectedTopics([]); // Reset collected topics for new round
+      setIsGeneratingQuestions(false); // Reset generating state
       return;
     }
     
@@ -513,9 +517,15 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     }
 
     if (message.type === 'all_topics_submitted') {
-      // All topics collected, could auto-advance to next round here
-      // For now, we'll wait for the host or backend to trigger round_changed
+      // All topics collected - Trivi is now generating questions
+      setIsGeneratingQuestions(true);
+      // The backend will broadcast round_changed when questions are ready
       return;
+    }
+    
+    if (message.type === 'round_changed') {
+      // Questions are ready, reset generating state
+      setIsGeneratingQuestions(false);
     }
     
     if (message.type === 'player_joined' && message.player) {
@@ -523,14 +533,14 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     }
 
     // Handle commentary messages from WebSocket
-    // if (message.type === 'commentary_ready' && message.audioUrl) {
-    //   playCommentary(message.audioUrl, message.text, false);
-    // }
+    if (message.type === 'commentary_ready' && message.audioUrl) {
+      playCommentary(message.audioUrl, message.text, false);
+    }
 
-    // if (message.type === 'commentary_event' && message.eventType) {
-    //   playEventCommentary(message.eventType, message.data || {}, message.priority || false);
-    // }
-  }, [fetchRoom, fetchLeaderboard, roomId, send]);
+    if (message.type === 'commentary_event' && message.eventType) {
+      playEventCommentary(message.eventType, message.data || {}, message.priority || false);
+    }
+  }, [fetchRoom, fetchLeaderboard, roomId, send, playCommentary, playEventCommentary]);
 
   const handleRetryStartGame = useCallback(() => {
     setStartGameError(null);
@@ -876,6 +886,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
           totalPlayers={state.context.room.players.length}
           collectedTopics={collectedTopics}
           leaderboard={state.context.leaderboard}
+          isGeneratingQuestions={isGeneratingQuestions}
         />
       </>
     );

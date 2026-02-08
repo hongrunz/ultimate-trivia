@@ -44,6 +44,7 @@ interface BigScreenNewRoundProps {
   totalPlayers: number;
   collectedTopics?: string[];
   leaderboard?: LeaderboardEntryForRound[];
+  isGeneratingQuestions?: boolean;
 }
 
 export default function BigScreenNewRound({
@@ -53,6 +54,7 @@ export default function BigScreenNewRound({
   totalPlayers,
   collectedTopics = [],
   leaderboard = [],
+  isGeneratingQuestions = false,
 }: BigScreenNewRoundProps) {
   return (
     <BigScreenContainer>
@@ -68,9 +70,13 @@ export default function BigScreenNewRound({
               <img src="/assets/Trivi_big_smile.svg" alt="Trivi character" />
             </TriviCommentaryCharacterContainer>
             <TriviCommentaryTextContainer>
-              <TriviCommentaryTitle>New round!</TriviCommentaryTitle>
+              <TriviCommentaryTitle>
+                {isGeneratingQuestions ? 'Working hard!' : 'New round!'}
+              </TriviCommentaryTitle>
               <TriviCommentaryBody>
-                Players are submitting topics...
+                {isGeneratingQuestions 
+                  ? 'Trivi is working hard to generate questions...'
+                  : 'Players are submitting topics...'}
               </TriviCommentaryBody>
             </TriviCommentaryTextContainer>
           </TriviCommentaryCard>
@@ -135,9 +141,15 @@ export default function BigScreenNewRound({
               </div>
             )}
 
-            <MutedText style={{ fontSize: '1rem', textAlign: 'center', marginTop: '3rem' }}>
-              Waiting for all players to submit their topics...
-            </MutedText>
+            {isGeneratingQuestions ? (
+              <MutedText style={{ fontSize: '1rem', textAlign: 'center', marginTop: '3rem' }}>
+                Trivi is working hard to generate questions...
+              </MutedText>
+            ) : (
+              <MutedText style={{ fontSize: '1rem', textAlign: 'center', marginTop: '3rem' }}>
+                Waiting for all players to submit their topics...
+              </MutedText>
+            )}
           </BigScreenQuestionCard>
         </BigScreenRightContainer>
       </BigScreenLayout>

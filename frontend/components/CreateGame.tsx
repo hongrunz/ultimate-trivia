@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   FormGroup,
@@ -11,7 +11,6 @@ import {
   ButtonContainerCenter,
 } from './styled/FormComponents';
 import { ErrorText } from './styled/ErrorComponents';
-import { InfoBox } from './styled/InfoComponents';
 import { GameTitleImage } from './styled/GameComponents';
 import {
   BigScreenContainer,
@@ -29,7 +28,6 @@ import {
   CreateGameDurationText,
 } from './styled/BigScreenComponents';
 import { api, tokenStorage } from '../lib/api';
-import { getSessionMode, getDeviceType } from '../lib/deviceDetection';
 import { useBackgroundMusic } from '../lib/useBackgroundMusic';
 import MusicControl from './MusicControl';
 
@@ -44,24 +42,11 @@ const ROUND_BUFFER_MINUTES = 2;
 
 export default function CreateGame() {
   const router = useRouter();
-  const [hostName, setHostName] = useState('');
   const [numQuestions, setNumQuestions] = useState(String(DEFAULT_NUM_QUESTIONS));
   const [timeLimit, setTimeLimit] = useState(String(DEFAULT_TIME_LIMIT));
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [topic, setTopic] = useState('');
-  const [sessionMode, setSessionMode] = useState<'player' | 'display'>('player');
-  const [deviceType, setDeviceType] = useState<'mobile' | 'web'>('web');
-  const [isMounted, setIsMounted] = useState(false);
   const [numRounds, setNumRounds] = useState(String(DEFAULT_NUM_ROUNDS));
-
-  useEffect(() => {
-    const mode = getSessionMode();
-    const device = getDeviceType();
-    setSessionMode(mode);
-    setDeviceType(device);
-    setIsMounted(true);
-  }, []);
 
   const { isMuted, toggleMute, isLoaded } = useBackgroundMusic('/background-music.mp3', {
     autoPlay: true,
@@ -78,7 +63,6 @@ export default function CreateGame() {
   const isTimeLimitValid = !Number.isNaN(parsedTimeLimit) && parsedTimeLimit >= 30 && parsedTimeLimit <= 50;
 
   const isFormValid =
-    (sessionMode !== 'player' || !!hostName.trim()) &&
     isNumRoundsValid &&
     isNumQuestionsValid &&
     isTimeLimitValid;
@@ -96,10 +80,6 @@ export default function CreateGame() {
   const totalMaxMinutes = totalSecondsMax > 0 ? Math.ceil(totalSecondsMax / 60) : 0;
 
   const handleCreateRoom = async () => {
-    if (sessionMode === 'player' && !hostName.trim()) {
-      setError('Please enter your name');
-      return;
-    }
     if (!isNumRoundsValid || !isNumQuestionsValid || !isTimeLimitValid) {
       setError('Please fill in all numeric fields with valid values (rounds: 1-5, questions: 1-10, time limit: 30-50 seconds).');
       return;
@@ -110,11 +90,11 @@ export default function CreateGame() {
 
     try {
       const response = await api.createRoom({
-        name: hostName.trim() || 'Host',
-        topics: deviceType === 'mobile' ? [topic] : [],
+        name: 'Host',
+        topics: [],
         questionsPerRound: parsedNumQuestions,
         timePerQuestion: parsedTimeLimit,
-        sessionMode: sessionMode,
+        sessionMode: 'display',
         numRounds: parsedNumRounds,
       });
 
@@ -157,32 +137,6 @@ export default function CreateGame() {
 
            
             <FormGroup>
-              {sessionMode === 'player' && (
-                <FieldContainer>
-                  <Label htmlFor="hostName">Your Name:</Label>
-                  <Input
-                    id="hostName"
-                    type="text"
-                    value={hostName}
-                    onChange={(e) => setHostName(e.target.value)}
-                    placeholder="Enter your name"
-                  />
-                </FieldContainer>
-              )}
-
-              {deviceType === 'mobile' && (
-                <FieldContainer>
-                  <Label htmlFor="topic">Topic Suggestion:</Label>
-                  <Input
-                    id="topic"
-                    type="text"
-                    value={topic}
-                    onChange={(e) => setTopic(e.target.value)}
-                    placeholder="Enter a topic for questions"
-                  />
-                </FieldContainer>
-              )}
-
               <FieldContainer>
                 <Label htmlFor="numRounds">Number of rounds</Label>
                 <Input
