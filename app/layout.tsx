@@ -35,6 +35,11 @@ const itim = Itim({
 export const metadata: Metadata = {
   title: "Trivia Game",
   description: "Create and join trivia games",
+  icons: {
+    icon: '/assets/Trivi_big_smile.svg',
+    shortcut: '/assets/Trivi_big_smile.svg',
+    apple: '/assets/Trivi_big_smile.svg',
+  },
 };
 
 export default function RootLayout({
