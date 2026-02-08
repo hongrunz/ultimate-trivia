@@ -1,5 +1,5 @@
 """
-TTS service with Redis caching. Uses Google Cloud Text-to-Speech API for low latency.
+TTS service with Redis caching. Uses Gemini Live API for text-to-speech.
 
 Primary entry points:
   - generate_tts(text, voice_config) -> bytes
@@ -7,8 +7,8 @@ Primary entry points:
 
 Notes:
   - This repo's Redis client uses decode_responses=True, so we store base64 strings.
-  - Uses Gemini API for TTS with Leda voice (via GEMINI_API_KEY).
-  - Falls back to standard Google Cloud TTS if needed.
+  - Uses Gemini Live API for TTS (via GEMINI_API_KEY).
+  - Falls back to Gemini API with generate_content_stream if needed.
 """
 
 from __future__ import annotations
@@ -24,14 +24,6 @@ from dotenv import load_dotenv
 from storage.client import get_redis_client
 
 logger = logging.getLogger(__name__)
-
-# Try to import Google Cloud TTS (faster, lower latency)
-try:
-    from google.cloud import texttospeech
-    GCLOUD_TTS_AVAILABLE = True
-except ImportError:
-    GCLOUD_TTS_AVAILABLE = False
-    logger.warning("google-cloud-texttospeech not available, will use Gemini Live API fallback")
 
 # Try to import Gemini TTS as fallback
 try:
@@ -59,21 +51,18 @@ load_dotenv()  # cwd .env
 
 
 # TTS Configuration
-DEFAULT_TTS_PROVIDER = os.getenv("TTS_PROVIDER", "gcloud")  # "gcloud" or "gemini"
+DEFAULT_TTS_PROVIDER = os.getenv("TTS_PROVIDER", "gemini")  # "gemini" (primary: Live API, fallback: generate_content_stream)
 DEFAULT_TTS_MODEL = os.getenv("GEMINI_TTS_MODEL_NAME", "gemini-2.5-flash-native-audio-preview-12-2025")
 # Pre-compute model name with prefix for faster lookups
 DEFAULT_TTS_MODEL_FULL = DEFAULT_TTS_MODEL if DEFAULT_TTS_MODEL.startswith("models/") else f"models/{DEFAULT_TTS_MODEL}"
 DEFAULT_AUDIO_MIME = os.getenv("TTS_AUDIO_MIME", "audio/wav")
 DEFAULT_CACHE_TTL_SECONDS = int(os.getenv("TTS_CACHE_TTL_SECONDS", "86400"))
 
-# Google Cloud TTS voice configuration
-# Using Gemini TTS model with v1beta1 API for better voices
+# Gemini TTS voice configuration (for fallback)
 DEFAULT_GCLOUD_VOICE_NAME = os.getenv("GCLOUD_TTS_VOICE_NAME", "Leda")
 DEFAULT_GCLOUD_LANGUAGE_CODE = os.getenv("GCLOUD_TTS_LANGUAGE_CODE", "en-us")
-DEFAULT_GCLOUD_SSML_GENDER = os.getenv("GCLOUD_TTS_SSML_GENDER", "FEMALE")
 DEFAULT_GCLOUD_MODEL_NAME = os.getenv("GCLOUD_TTS_MODEL_NAME", "gemini-2.5-flash-lite-preview-tts")
 DEFAULT_GCLOUD_TTS_PROMPT = os.getenv("GCLOUD_TTS_PROMPT", "Read aloud in a warm, welcoming tone.")
-GCLOUD_TTS_API_KEY = os.getenv("GCLOUD_TTS_API_KEY")  # Optional API key for authentication
 
 
 def _get_gemini_api_key() -> str:
@@ -321,65 +310,6 @@ async def _generate_tts_async(text: str, voice_config: Dict[str, Any] | None = N
         raise
 
 
-def _generate_tts_gcloud(text: str, voice_config: Dict[str, Any] | None = None) -> bytes:
-    """
-    Generate audio bytes using Google Cloud Text-to-Speech API (standard v1 API).
-    Uses default credentials if available, otherwise requires explicit authentication.
-    """
-    if not GCLOUD_TTS_AVAILABLE:
-        raise RuntimeError("google-cloud-texttospeech not available")
-    
-    voice_config = voice_config or {}
-    
-    # Map style to voice if style is specified
-    style = voice_config.get("style")
-    if style == "game_show_host":
-        # Use bright, energetic voice for game show host style
-        voice_name = "en-US-Studio-O"  # Bright, energetic alternative
-    else:
-        voice_name = voice_config.get("voiceName") or DEFAULT_GCLOUD_VOICE_NAME
-    
-    # Configure voice settings
-    language_code = voice_config.get("languageCode") or DEFAULT_GCLOUD_LANGUAGE_CODE
-    
-    # Use standard v1 API with Text-to-Speech client library
-    client = texttospeech.TextToSpeechClient()
-    
-    # For standard API, ensure we're using a valid voice name
-    if voice_name in ["Leda", "Aoede"]:
-        voice_name = "en-US-Studio-O"  # Bright, energetic alternative
-        logger.info(f"Using en-US-Studio-O as alternative to {voice_name} (Gemini voice not available via v1 API)")
-    
-    # Set the text input
-    synthesis_input = texttospeech.SynthesisInput(text=text.strip())
-    
-    # Build the voice request
-    voice = texttospeech.VoiceSelectionParams(
-        language_code=language_code,
-        name=voice_name,
-    )
-    
-    # Select the type of audio file to return
-    audio_config = texttospeech.AudioConfig(
-        audio_encoding=texttospeech.AudioEncoding.LINEAR16,  # WAV format
-        sample_rate_hertz=24000,
-        pitch=voice_config.get("pitch", 0),
-        speaking_rate=voice_config.get("speakingRate", 1.0),
-    )
-    
-    logger.info(f"Generating TTS audio via Google Cloud TTS v1 voice={voice_name} language={language_code}")
-    
-    # Perform the text-to-speech request
-    response = client.synthesize_speech(
-        input=synthesis_input, voice=voice, audio_config=audio_config
-    )
-    
-    # Return the audio content as bytes
-    audio_bytes = response.audio_content
-    logger.info(f"Generated {len(audio_bytes)} bytes of audio via Google Cloud TTS v1")
-    return audio_bytes
-
-
 def _generate_tts_gcloud_v1beta1(text: str, voice_name: str, language_code: str, model_name: str, prompt: str, voice_config: Dict[str, Any]) -> bytes:
     """
     Generate audio using Gemini API with google-genai library for Leda voice.
@@ -533,11 +463,6 @@ def generate_tts(text: str, voice_config: Dict[str, Any] | None = None) -> bytes
     For Gemini API (fallback):
       - model: override model name
       - voiceName: voice name (default: "Leda")
-    For Google Cloud TTS (fallback):
-      - voiceName: voice name (default: "en-US-Studio-O" - bright, energetic voice)
-      - languageCode: language code (default: "en-US")
-      - ssmlGender: "FEMALE", "MALE", or "NEUTRAL" (default: "FEMALE")
-      - style: "game_show_host" will use a bright, energetic voice
     """
     if not text or not text.strip():
         raise ValueError("text must be a non-empty string")
@@ -585,14 +510,7 @@ def generate_tts(text: str, voice_config: Dict[str, Any] | None = None) -> bytes
                     voice_config
                 )
         except Exception as e:
-            logger.warning(f"Gemini API TTS failed: {e}, falling back to Google Cloud TTS")
-    
-    # Fallback 2: Try Google Cloud TTS (standard API, no service account needed for basic usage)
-    if provider == "gcloud" and GCLOUD_TTS_AVAILABLE:
-        try:
-            return _generate_tts_gcloud(text, voice_config)
-        except Exception as e:
-            logger.warning(f"Google Cloud TTS failed: {e}")
+            logger.warning(f"Gemini API TTS failed: {e}")
     
     # Return empty WAV as fallback
     logger.error("No TTS provider available")
