@@ -73,9 +73,9 @@ export default function CreateGame() {
   const parsedNumQuestions = numQuestions === '' ? NaN : parseInt(numQuestions, 10);
   const parsedTimeLimit = timeLimit === '' ? NaN : parseInt(timeLimit, 10);
 
-  const isNumRoundsValid = !Number.isNaN(parsedNumRounds) && parsedNumRounds >= 1;
-  const isNumQuestionsValid = !Number.isNaN(parsedNumQuestions) && parsedNumQuestions >= 1;
-  const isTimeLimitValid = !Number.isNaN(parsedTimeLimit) && parsedTimeLimit >= 1;
+  const isNumRoundsValid = !Number.isNaN(parsedNumRounds) && parsedNumRounds >= 1 && parsedNumRounds <= 5;
+  const isNumQuestionsValid = !Number.isNaN(parsedNumQuestions) && parsedNumQuestions >= 1 && parsedNumQuestions <= 10;
+  const isTimeLimitValid = !Number.isNaN(parsedTimeLimit) && parsedTimeLimit >= 30 && parsedTimeLimit <= 50;
 
   const isFormValid =
     (sessionMode !== 'player' || !!hostName.trim()) &&
@@ -101,7 +101,7 @@ export default function CreateGame() {
       return;
     }
     if (!isNumRoundsValid || !isNumQuestionsValid || !isTimeLimitValid) {
-      setError('Please fill in all numeric fields with valid values (rounds and questions ≥ 1, time limit ≥ 1).');
+      setError('Please fill in all numeric fields with valid values (rounds: 1-5, questions: 1-10, time limit: 30-50 seconds).');
       return;
     }
 
@@ -190,8 +190,9 @@ export default function CreateGame() {
                   type="number"
                   value={numRounds}
                   min={1}
+                  max={5}
                   onChange={(e) => setNumRounds(e.target.value)}
-                  placeholder="e.g., 5"
+                  placeholder="e.g., 3"
                 />
               </FieldContainer>
 
@@ -202,8 +203,9 @@ export default function CreateGame() {
                   type="number"
                   value={numQuestions}
                   min={1}
+                  max={10}
                   onChange={(e) => setNumQuestions(e.target.value)}
-                  placeholder="e.g., 5"
+                  placeholder="e.g., 3"
                 />
               </FieldContainer>
 
@@ -213,9 +215,10 @@ export default function CreateGame() {
                   id="timeLimit"
                   type="number"
                   value={timeLimit}
-                  min={1}
+                  min={30}
+                  max={50}
                   onChange={(e) => setTimeLimit(e.target.value)}
-                  placeholder="e.g., 20 (seconds)"
+                  placeholder="e.g., 30 (seconds)"
                 />
               </FieldContainer>
             </FormGroup>
