@@ -33,7 +33,7 @@ const itim = Itim({
 });
 
 export const metadata: Metadata = {
-  title: "Trivia Game",
+  title: "Wildcard Trivia!",
   description: "Create and join trivia games",
   icons: {
     icon: '/assets/Trivi_big_smile.svg',
