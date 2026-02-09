@@ -68,6 +68,25 @@ export default function PlayerGame({ roomId }: PlayerGameProps) {
     volume: 0.3,
   });
 
+  // Preload question audio URLs to reduce latency when questions are shown
+  useEffect(() => {
+    if (state.context.room?.questions) {
+      // Preload audio for all questions and explanations
+      state.context.room.questions.forEach((question) => {
+        if (question.questionAudioUrl) {
+          const audio = new Audio(question.questionAudioUrl);
+          audio.preload = 'auto';
+          // Don't play, just preload
+        }
+        if (question.explanationAudioUrl) {
+          const audio = new Audio(question.explanationAudioUrl);
+          audio.preload = 'auto';
+          // Don't play, just preload
+        }
+      });
+    }
+  }, [state.context.room?.questions]);
+
   // Helper function to map leaderboard data to UI format
   const mapLeaderboardData = useCallback((
     leaderboardData: LeaderboardResponse,

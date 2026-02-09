@@ -432,10 +432,13 @@ async def start_game(room_id: str, hostToken: Optional[str] = Header(None, alias
         
         created_questions = QuestionStore.create_questions(questions_to_create)
         
-        # Pre-generate TTS audio for all questions and explanations
+        # Pre-generate TTS audio for all questions and explanations in parallel
         question_ids = [str(q.question_id) for q in created_questions]
-        await _generate_questions_audio(sample_questions, question_ids)
-        await _generate_questions_explanation_audio(sample_questions, question_ids)
+        # Generate questions and explanations in parallel to reduce latency
+        await asyncio.gather(
+            _generate_questions_audio(sample_questions, question_ids),
+            _generate_questions_explanation_audio(sample_questions, question_ids)
+        )
         
         # Update room status (use UTC time for consistency across timezones)
         from datetime import timezone
@@ -705,10 +708,13 @@ async def submit_topic(
             
             created_questions = QuestionStore.create_questions(questions_to_create)
             
-            # Pre-generate TTS audio for all questions and explanations
+            # Pre-generate TTS audio for all questions and explanations in parallel
             question_ids = [str(q.question_id) for q in created_questions]
-            await _generate_questions_audio(sample_questions, question_ids)
-            await _generate_questions_explanation_audio(sample_questions, question_ids)
+            # Generate questions and explanations in parallel to reduce latency
+            await asyncio.gather(
+                _generate_questions_audio(sample_questions, question_ids),
+                _generate_questions_explanation_audio(sample_questions, question_ids)
+            )
             
             # Update room's current round
             from datetime import timezone

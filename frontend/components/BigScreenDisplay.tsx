@@ -91,6 +91,25 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
   // Play welcome audio once on mount
   usePlayAudio('/assets/audio/start-game.wav', { volume: 0.8, autoPlay: true });
 
+  // Preload question audio URLs to reduce latency when questions are shown
+  useEffect(() => {
+    if (state.context.room?.questions) {
+      // Preload audio for all questions and explanations
+      state.context.room.questions.forEach((question) => {
+        if (question.questionAudioUrl) {
+          const audio = new Audio(question.questionAudioUrl);
+          audio.preload = 'auto';
+          // Don't play, just preload
+        }
+        if (question.explanationAudioUrl) {
+          const audio = new Audio(question.explanationAudioUrl);
+          audio.preload = 'auto';
+          // Don't play, just preload
+        }
+      });
+    }
+  }, [state.context.room?.questions]);
+
   // Helper function to map leaderboard data to UI format
   const mapLeaderboardData = useCallback((
     leaderboardData: LeaderboardResponse,
