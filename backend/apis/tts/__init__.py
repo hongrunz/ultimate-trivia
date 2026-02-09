@@ -8,7 +8,6 @@ Primary entry points:
 Notes:
   - This repo's Redis client uses decode_responses=True, so we store base64 strings.
   - Uses Gemini Live API for TTS (via GEMINI_API_KEY).
-  - Falls back to Gemini API with generate_content_stream if needed.
 """
 
 from __future__ import annotations
@@ -25,16 +24,11 @@ from storage.client import get_redis_client
 
 logger = logging.getLogger(__name__)
 
-# Try to import Gemini TTS as fallback
-try:
-    from google import genai
-    from google.genai import types
-    GEMINI_TTS_AVAILABLE = True
-    # Cache for Gemini Live API client (reused across requests for lower latency)
-    _gemini_live_client: Optional[Any] = None
-except ImportError:
-    GEMINI_TTS_AVAILABLE = False
-    _gemini_live_client = None
+from google import genai
+from google.genai import types
+
+# Cache for Gemini Live API client (reused across requests for lower latency)
+_gemini_live_client: Optional[Any] = None
 
 
 # Load backend/.env first (with override) so GEMINI_API_KEY from backend/.env is always used
@@ -51,7 +45,6 @@ load_dotenv()  # cwd .env
 
 
 # TTS Configuration
-DEFAULT_TTS_PROVIDER = os.getenv("TTS_PROVIDER", "gemini")  # "gemini" (primary: Live API, fallback: generate_content_stream)
 DEFAULT_TTS_MODEL = os.getenv("GEMINI_TTS_MODEL_NAME", "gemini-2.5-flash-native-audio-preview-12-2025")
 # Pre-compute model name with prefix for faster lookups
 DEFAULT_TTS_MODEL_FULL = DEFAULT_TTS_MODEL if DEFAULT_TTS_MODEL.startswith("models/") else f"models/{DEFAULT_TTS_MODEL}"
@@ -147,81 +140,6 @@ def _pcm_to_wav(pcm_data: bytes, sample_rate: int = 24000, channels: int = 1, sa
     
     return wav
 
-
-def _extract_audio_bytes(resp: Any) -> bytes:
-    """
-    Best-effort extraction of audio bytes from a google-genai response.
-
-    We try a few common shapes:
-      - resp.audio / resp.audios
-      - resp.candidates[0].content.parts[*].inline_data.data
-      - resp.candidates[0].content.parts[*].blob / .data
-    """
-    # 1) direct attribute
-    for attr in ("audio", "audios"):
-        val = getattr(resp, attr, None)
-        if val:
-            if isinstance(val, (bytes, bytearray)):
-                return bytes(val)
-            if isinstance(val, str):
-                # sometimes base64
-                try:
-                    return base64.b64decode(val)
-                except Exception:
-                    pass
-
-    # 2) candidate parts
-    candidates = getattr(resp, "candidates", None) or []
-    for cand in candidates[:1]:
-        content = getattr(cand, "content", None)
-        parts = getattr(content, "parts", None) or []
-        for p in parts:
-            inline = getattr(p, "inline_data", None)
-            if inline is not None:
-                data = getattr(inline, "data", None)
-                if isinstance(data, (bytes, bytearray)):
-                    return bytes(data)
-                if isinstance(data, str):
-                    try:
-                        return base64.b64decode(data)
-                    except Exception:
-                        pass
-            blob = getattr(p, "blob", None)
-            if isinstance(blob, (bytes, bytearray)):
-                return bytes(blob)
-            data = getattr(p, "data", None)
-            if isinstance(data, (bytes, bytearray)):
-                return bytes(data)
-            if isinstance(data, str):
-                try:
-                    return base64.b64decode(data)
-                except Exception:
-                    pass
-
-    # 3) raw text fallback (not audio, but occasionally SDK sets resp.text to base64)
-    text = getattr(resp, "text", None)
-    if isinstance(text, str) and text.strip():
-        try:
-            return base64.b64decode(text.strip())
-        except Exception:
-            pass
-
-    raise RuntimeError("Could not extract audio bytes from Gemini TTS response")
-
-
-def _list_available_models() -> list[str]:
-    """List available models to help debug TTS model availability."""
-    try:
-        client = genai.Client(api_key=_get_gemini_api_key())
-        models = client.models.list()
-        model_names = [m.name for m in models if hasattr(m, 'name')]
-        logger.info(f"Available models: {model_names[:10]}...")  # Log first 10
-        return model_names
-    except Exception as e:
-        logger.warning(f"Failed to list models: {e}")
-        return []
-
-
 async def _generate_tts_async(text: str, voice_config: Dict[str, Any] | None = None) -> bytes:
     """
     Generate audio bytes from text using Gemini Live API (async).
@@ -303,103 +221,41 @@ async def _generate_tts_async(text: str, voice_config: Dict[str, Any] | None = N
         raise
 
 
-def _convert_audio_to_wav(audio_data: bytes, mime_type: str) -> bytes:
-    """Convert audio data to WAV format based on MIME type parameters."""
-    import struct
-    
-    # Parse MIME type to get parameters
-    bits_per_sample = 16
-    sample_rate = 24000
-    num_channels = 1
-    
-    # Extract rate and bits from MIME type (e.g., "audio/L16;rate=24000")
-    parts = mime_type.split(";")
-    for param in parts:
-        param = param.strip()
-        if param.lower().startswith("rate="):
-            try:
-                rate_str = param.split("=", 1)[1]
-                sample_rate = int(rate_str)
-            except (ValueError, IndexError):
-                pass
-        elif param.startswith("audio/L"):
-            try:
-                bits_per_sample = int(param.split("L", 1)[1])
-            except (ValueError, IndexError):
-                pass
-    
-    # Calculate WAV header parameters
-    bytes_per_sample = bits_per_sample // 8
-    block_align = num_channels * bytes_per_sample
-    byte_rate = sample_rate * block_align
-    data_size = len(audio_data)
-    chunk_size = 36 + data_size
-    
-    # Build WAV header
-    header = struct.pack(
-        "<4sI4s4sIHHIIHH4sI",
-        b"RIFF",          # ChunkID
-        chunk_size,       # ChunkSize
-        b"WAVE",          # Format
-        b"fmt ",          # Subchunk1ID
-        16,               # Subchunk1Size
-        1,                # AudioFormat (PCM)
-        num_channels,     # NumChannels
-        sample_rate,      # SampleRate
-        byte_rate,        # ByteRate
-        block_align,      # BlockAlign
-        bits_per_sample,  # BitsPerSample
-        b"data",          # Subchunk2ID
-        data_size         # Subchunk2Size
-    )
-    
-    return header + audio_data
-
-
 def generate_tts(text: str, voice_config: Dict[str, Any] | None = None) -> bytes:
     """
-    Generate audio bytes from text. Uses Gemini Live API as primary method.
-    Falls back to other TTS providers if Live API is not available.
+    Generate audio bytes from text using Gemini Live API.
     
-    voice_config is passed through best-effort; supported keys vary by provider.
-    For Gemini Live API (primary):
+    voice_config supports:
       - model: override model name (default: "gemini-2.5-flash-native-audio-preview-12-2025")
       - voiceName: voice name (default: "Zephyr")
-    For Gemini API (fallback):
-      - model: override model name
-      - voiceName: voice name (default: "Leda")
     """
     if not text or not text.strip():
         raise ValueError("text must be a non-empty string")
     
     voice_config = voice_config or {}
-    provider = voice_config.get("provider") or DEFAULT_TTS_PROVIDER
     
-    # Primary: Try Gemini Live API first
-    if GEMINI_TTS_AVAILABLE:
-        import asyncio
-        import concurrent.futures
-        
+    # Use Gemini Live API
+    import asyncio
+    import concurrent.futures
+    
+    try:
+        # Try to get existing event loop
         try:
-            # Try to get existing event loop
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # If loop is running, we need to run in a thread
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(asyncio.run, _generate_tts_async(text, voice_config))
-                        return future.result()
-                else:
-                    # Loop exists but not running, use it
-                    return loop.run_until_complete(_generate_tts_async(text, voice_config))
-            except RuntimeError:
-                # No event loop, create new one
-                return asyncio.run(_generate_tts_async(text, voice_config))
-        except Exception as e:
-            logger.warning(f"Gemini Live API TTS failed: {e}, falling back to other methods")
-    
-    # Return empty WAV as fallback
-    logger.error("No TTS provider available")
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # If loop is running, we need to run in a thread
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, _generate_tts_async(text, voice_config))
+                    return future.result()
+            else:
+                # Loop exists but not running, use it
+                return loop.run_until_complete(_generate_tts_async(text, voice_config))
+        except RuntimeError:
+            # No event loop, create new one
+            return asyncio.run(_generate_tts_async(text, voice_config))
+    except Exception as e:
+        logger.error(f"Gemini Live API TTS failed: {e}")
+        # Return empty WAV as fallback
     empty_wav = (
         b'RIFF'  # ChunkID
         b'\x24\x00\x00\x00'  # ChunkSize (36 bytes)
