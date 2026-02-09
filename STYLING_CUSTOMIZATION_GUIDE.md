@@ -1,6 +1,6 @@
 # Frontend Styling Customization Guide
 
-This document lists all the styling elements you can customize in the Ultimate Trivia frontend. All styles are defined using styled-components, making them easy to modify.
+This document lists all the styling elements you can customize in the Wildcard Trivia frontend. All styles are defined using styled-components, making them easy to modify.
 
 ## 📁 File Locations
 

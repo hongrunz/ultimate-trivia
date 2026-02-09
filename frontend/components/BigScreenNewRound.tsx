@@ -62,7 +62,7 @@ export default function BigScreenNewRound({
         {/* Left Side - Title, Trivi, Leaderboard */}
         <GamePlayStatus>
           <BigScreenGameTitle>
-            <GameTitleImage src="/assets/game_title.svg" alt="Ultimate Trivia" />
+            <GameTitleImage src="/assets/game_title.svg" alt="Wildcard Trivia" />
           </BigScreenGameTitle>
 
           <TriviCommentaryCard>

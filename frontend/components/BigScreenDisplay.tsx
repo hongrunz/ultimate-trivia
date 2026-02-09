@@ -1054,7 +1054,7 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
           <GamePlayStatus>
             {/* Game Title */}
             <BigScreenGameTitle>
-              <GameTitleImage src="/assets/game_title.svg" alt="Ultimate Trivia" />
+              <GameTitleImage src="/assets/game_title.svg" alt="Wildcard Trivia" />
             </BigScreenGameTitle>
 
             {/* Trivi Commentary Card */}
