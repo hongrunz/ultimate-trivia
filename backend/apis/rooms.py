@@ -779,7 +779,7 @@ def _compute_game_stats_and_awards(room_uuid: UUID) -> GameStatsResponse:
             awards=[],
         )
 
-    # Wildcard King: player(s) with highest total score
+    # Wildcard Champion: player(s) with highest total score
     max_score = max(p.score if hasattr(p, "score") else 0 for p in players)
     kings = [p for p in players if (p.score if hasattr(p, "score") else 0) == max_score]
     if kings:
@@ -787,7 +787,7 @@ def _compute_game_stats_and_awards(room_uuid: UUID) -> GameStatsResponse:
             GameStatsAward(
                 playerIds=[str(p.player_id) for p in kings],
                 playerNames=[p.player_name for p in kings],
-                awardName="The Wildcard King",
+                awardName="The Wildcard Champion",
                 topic=None,
             )
         )

@@ -441,6 +441,37 @@ export default function BigScreenDisplay({ roomId }: BigScreenDisplayProps) {
     }
   }, [state.value]);
 
+  // Play new round buffer audio when generating questions
+  const newRoundAudioPlayedRef = useRef<number>(-1);
+  const prevIsGeneratingRef = useRef(false);
+  useEffect(() => {
+    const currentRound = state.context.room?.currentRound ?? 0;
+    
+    // Play audio when transitioning into generating state (isGeneratingQuestions becomes true)
+    if (state.value === 'newRound' && isGeneratingQuestions && !prevIsGeneratingRef.current) {
+      // Play audio once per round when questions start being generated
+      if (newRoundAudioPlayedRef.current !== currentRound) {
+        const audio = new Audio('/assets/audio/new-round-buffer.wav');
+        audio.volume = 0.8;
+        audio.play().catch(() => {
+          // Auto-play prevented by browser - that's okay
+        });
+        newRoundAudioPlayedRef.current = currentRound;
+      }
+    }
+    
+    // Update previous generating state
+    prevIsGeneratingRef.current = isGeneratingQuestions;
+    
+    // Reset when leaving newRound state or round changes
+    if (state.value !== 'newRound' || newRoundAudioPlayedRef.current !== currentRound) {
+      if (state.value !== 'newRound') {
+        newRoundAudioPlayedRef.current = -1;
+        prevIsGeneratingRef.current = false;
+      }
+    }
+  }, [state.value, isGeneratingQuestions, state.context.room?.currentRound]);
+
   // WebSocket message handler
   const handleWebSocketMessage = useCallback(async (message: {
     type: string;
