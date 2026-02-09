@@ -58,13 +58,6 @@ DEFAULT_TTS_MODEL_FULL = DEFAULT_TTS_MODEL if DEFAULT_TTS_MODEL.startswith("mode
 DEFAULT_AUDIO_MIME = os.getenv("TTS_AUDIO_MIME", "audio/wav")
 DEFAULT_CACHE_TTL_SECONDS = int(os.getenv("TTS_CACHE_TTL_SECONDS", "86400"))
 
-# Gemini TTS voice configuration (for fallback)
-DEFAULT_GCLOUD_VOICE_NAME = os.getenv("GCLOUD_TTS_VOICE_NAME", "Leda")
-DEFAULT_GCLOUD_LANGUAGE_CODE = os.getenv("GCLOUD_TTS_LANGUAGE_CODE", "en-us")
-DEFAULT_GCLOUD_MODEL_NAME = os.getenv("GCLOUD_TTS_MODEL_NAME", "gemini-2.5-flash-lite-preview-tts")
-DEFAULT_GCLOUD_TTS_PROMPT = os.getenv("GCLOUD_TTS_PROMPT", "Read aloud in a warm, welcoming tone.")
-
-
 def _get_gemini_api_key() -> str:
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
@@ -310,94 +303,6 @@ async def _generate_tts_async(text: str, voice_config: Dict[str, Any] | None = N
         raise
 
 
-def _generate_tts_gcloud_v1beta1(text: str, voice_name: str, language_code: str, model_name: str, prompt: str, voice_config: Dict[str, Any]) -> bytes:
-    """
-    Generate audio using Gemini API with google-genai library for Leda voice.
-    Uses GEMINI_API_KEY for authentication.
-    """
-    import struct
-    
-    if not GEMINI_TTS_AVAILABLE:
-        raise RuntimeError("google-genai library not available. Install with: pip install google-genai")
-    
-    # Get Gemini API key
-    gemini_api_key = _get_gemini_api_key()
-    
-    # Create client
-    client = genai.Client(api_key=gemini_api_key)
-    
-    # Use the model from the example
-    model = "gemini-2.5-flash-preview-tts"
-    
-    # Build the text with prompt
-    full_text = f"{prompt}\n{text.strip()}"
-    
-    # Create content
-    contents = [
-        types.Content(
-            role="user",
-            parts=[
-                types.Part.from_text(text=full_text),
-            ],
-        ),
-    ]
-    
-    # Configure generation with Leda voice
-    generate_content_config = types.GenerateContentConfig(
-        temperature=1,
-        response_modalities=["audio"],
-        speech_config=types.SpeechConfig(
-            voice_config=types.VoiceConfig(
-                prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                    voice_name=voice_name  # "Leda"
-                )
-            )
-        ),
-    )
-    
-    logger.info(f"Generating TTS audio via Gemini API voice={voice_name} model={model}")
-    
-    # Collect audio chunks
-    audio_chunks = []
-    audio_mime_type = None
-    
-    try:
-        # Stream the response
-        for chunk in client.models.generate_content_stream(
-            model=model,
-            contents=contents,
-            config=generate_content_config,
-        ):
-            if chunk.parts is None:
-                continue
-            
-            # Check for audio data
-            if chunk.parts[0].inline_data and chunk.parts[0].inline_data.data:
-                inline_data = chunk.parts[0].inline_data
-                audio_chunks.append(inline_data.data)
-                if not audio_mime_type:
-                    audio_mime_type = inline_data.mime_type
-            elif chunk.text:
-                logger.debug(f"Text response: {chunk.text}")
-        
-        if not audio_chunks:
-            raise RuntimeError("No audio data received from Gemini API")
-        
-        # Combine all audio chunks
-        audio_data = b''.join(audio_chunks)
-        
-        # Convert to WAV if needed
-        if audio_mime_type and audio_mime_type != "audio/wav":
-            audio_data = _convert_audio_to_wav(audio_data, audio_mime_type)
-        
-        logger.info(f"Generated {len(audio_data)} bytes of audio via Gemini API")
-        return audio_data
-        
-    except Exception as e:
-        logger.error(f"Failed to generate audio via Gemini API: {e}")
-        raise RuntimeError(f"Failed to generate audio via Gemini API: {e}")
-
-
 def _convert_audio_to_wav(audio_data: bytes, mime_type: str) -> bytes:
     """Convert audio data to WAV format based on MIME type parameters."""
     import struct
@@ -492,25 +397,6 @@ def generate_tts(text: str, voice_config: Dict[str, Any] | None = None) -> bytes
                 return asyncio.run(_generate_tts_async(text, voice_config))
         except Exception as e:
             logger.warning(f"Gemini Live API TTS failed: {e}, falling back to other methods")
-    
-    # Fallback 1: Try Gemini API with generate_content_stream (for Leda voice)
-    if GEMINI_TTS_AVAILABLE:
-        try:
-            # Check if we should use Gemini API (for Leda voice or if explicitly requested)
-            style = voice_config.get("style")
-            voice_name = voice_config.get("voiceName") or DEFAULT_GCLOUD_VOICE_NAME
-            if style == "game_show_host" or voice_name == "Leda" or provider == "gemini":
-                # Use Gemini API for Leda voice
-                return _generate_tts_gcloud_v1beta1(
-                    text,
-                    voice_name if voice_name == "Leda" else "Leda",
-                    voice_config.get("languageCode") or DEFAULT_GCLOUD_LANGUAGE_CODE,
-                    voice_config.get("modelName") or DEFAULT_GCLOUD_MODEL_NAME,
-                    voice_config.get("prompt") or DEFAULT_GCLOUD_TTS_PROMPT,
-                    voice_config
-                )
-        except Exception as e:
-            logger.warning(f"Gemini API TTS failed: {e}")
     
     # Return empty WAV as fallback
     logger.error("No TTS provider available")
